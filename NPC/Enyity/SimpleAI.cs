@@ -47,7 +47,7 @@ public class SimpleAI : MonoBehaviour
     [SerializeField] private float navDistanceToTarget;
     [SerializeField] private float straightDistanceToTarget;
     [SerializeField] private float lookDistance;
-    //private float bowDistance;
+    private float bowDistance;
     [SerializeField] private float swordUnequipDistance;
     [SerializeField] private float attackDistance;
     [SerializeField] private float attackStayDistance;
