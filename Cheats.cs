@@ -53,12 +53,12 @@ public class Cheats : MonoBehaviour
 
         if(enter.StartsWith("SetSpeedWalk")) //count 4-def
         {
-            Body.GetComponent<ControllerBody>().Speed = int.Parse(enter.Substring(13));
+            Body.GetComponent<ControllerBody>().speedWalkSpeed = int.Parse(enter.Substring(13));
         }
         
         if(enter.StartsWith("SetSpeedRun")) //count 9-def
         {
-            Body.GetComponent<ControllerBody>().SpeedRunBase = int.Parse(enter.Substring(12));
+            Body.GetComponent<ControllerBody>().speedRunSpeed = int.Parse(enter.Substring(12));
         }
 
         EnterText.GetComponent<InputField>().text = "";

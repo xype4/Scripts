@@ -4,24 +4,36 @@ using UnityEngine;
 
 public class ControllerBody : MonoBehaviour
 {
-    public float Run;
-    public float Speed = 4f;
-    public float SpeedRunBase = 8f;
-    //[HideInInspector]
-    public float SpeedRunHeavyFactor = 0f;
-    public float HeavyRun = 2f;
-    public float JumpSpeed = 6f;
-    public float SpeedSwimRun = 6f;
-    private float UpSwimSpeed = 30f;
-    private float Gravity = 30f;
-    public float StaminaRebound;
-    private GameObject Stamina;
+    public float speedWalkSpeed = 4f;
+    public float speedRunSpeed = 8f;
+    public float speedRunSpeedWithSkills;
+    [Space]
+    [HideInInspector] public float SpeedRunHeavyFactor = 0f;
+    [Space]
+    public float jumpVelocity = 6f;
+    private float jumpVelocityMoment = 0f;
+    public float gravity = 300f;
+    public float jumpStamina = 10f;
+    [Space]
+    public float speedSwimRun = 6f;
+    public float speedSwim = 3f;
+    public float upSwimSpeed = 30f;
+    [Space]
+    public float staminaRebound;
+    private PlayerStats _playerStats;
     private Skill_Indicator Skills;
-    private bool run;
+
+    private bool run = false;
+    private bool walk = false;
+    [HideInInspector] public bool swim = false;
+
     private Vector3 moveDir = Vector3.zero;
     private CharacterController ControlleR;
-    private GameObject Camera;
-    public float StaminaCount;
+    public ControllerHad Camera;
+    private Animator cameraAnimator;
+    
+    [HideInInspector] public float staminaCount;
+
     private bool reb1 = false;
     private bool reb1trigger = true;
     private bool reb2 = false;
@@ -31,8 +43,6 @@ public class ControllerBody : MonoBehaviour
     [HideInInspector]
     public float timeFactor = 1;
     private float angle;
-    [HideInInspector]
-    public bool swim = false;
     private float swimFactor;
 
     private float TimeConts;
@@ -42,105 +52,153 @@ public class ControllerBody : MonoBehaviour
     void Start()
     {
         Skills = gameObject.GetComponent<Skill_Indicator>();
-        Camera = gameObject.transform.GetChild(0).gameObject;
-        Stamina = Camera.transform.GetChild(1).gameObject;
         ControlleR = GetComponent<CharacterController>();
-        StaminaCount = gameObject.GetComponent<PlayerStats>().Stamina_Count;
-        Run = 0.2f;
+        _playerStats = gameObject.GetComponent<PlayerStats>();
+        staminaCount = _playerStats.Stamina_Count;
         TimeConts = 1/Time.fixedDeltaTime;
+        cameraAnimator = Camera.gameObject.GetComponent<Animator>();
     }
 
     void FixedUpdate()
     {
-        float SpeedRun = SpeedRunBase + Skills.RunSpeed - SpeedRunHeavyFactor;
+        staminaCount = _playerStats.Stamina_Count;
+        speedRunSpeedWithSkills = speedRunSpeed + Skills.RunSpeed - SpeedRunHeavyFactor;
+
+
         RaycastHit hit;
         if (Physics.Raycast(transform.position, -Vector3.up, out hit)) 
             angle = Vector3.Angle(Vector3.up, hit.normal);
 
-        StaminaCount = gameObject.GetComponent<PlayerStats>().Stamina_Count;
+
+        moveDir = new Vector3(Input.GetAxis("Horizontal"),0,Input.GetAxis("Vertical"));
+
 
         run = false;
+        walk = false;
 
-        if((ControlleR.isGrounded || swim) && (Input.GetKey("left shift") && StaminaCount > 5))
+        
+        Run();
+        Walk();
+        Stay();
+        Rebounds();
+        Jump();
+        Gravity();
+        
+
+        moveDir = transform.TransformDirection(moveDir);
+        ControlleR.Move (moveDir* 0.02f*timeFactor);
+
+        transform.rotation = Quaternion.Euler(0f,Camera.MoveX,0f); 
+
+        _playerStats.Stamina_Count = staminaCount;
+        
+    }
+
+    void Run()
+    {
+        if(run == false && staminaCount > 5 && Input.GetKey("left shift") && moveDir!=new Vector3(0f,0f,0f))
         {
-            moveDir = new Vector3(Input.GetAxis("Horizontal"),0,Input.GetAxis("Vertical"));
-            if (moveDir.z < 0) moveDir.z *= 0.6f; 
-            moveDir = transform.TransformDirection(moveDir);
+            cameraAnimator.SetTrigger("ToRun");
+            cameraAnimator.ResetTrigger("ToStay");
+            cameraAnimator.ResetTrigger("ToWalk");
+            if (moveDir.z < 0)
+                moveDir.z *= 0.6f; 
+
             if(!swim)
             {
-                moveDir *= SpeedRun;
-                moveDir.y -= 4f;
+                moveDir *= speedRunSpeedWithSkills;
             }
             else
-                moveDir *= SpeedSwimRun;
-            StaminaCount-=0.3f;
+                moveDir *= speedSwimRun;
+            staminaCount-=0.2f;
             run = true;
         }
+    }
 
-        if((ControlleR.isGrounded || swim) && run == false && StaminaCount > 5)
+    void Walk()
+    {
+        if(run == false && staminaCount > 5 && moveDir!=new Vector3(0f,0f,0f))
         {
-            moveDir = new Vector3(Input.GetAxis("Horizontal"),0,Input.GetAxis("Vertical"));
-            moveDir = transform.TransformDirection(moveDir);
-            moveDir *= Speed;
-        }
+            cameraAnimator.ResetTrigger("ToRun");
+            cameraAnimator.ResetTrigger("ToStay");
+            cameraAnimator.SetTrigger("ToWalk");
+            if (moveDir.z < 0)
+                moveDir.z *= 0.6f; 
 
-        if(StaminaCount <=5)
+            if(!swim)
+            {
+                moveDir *= speedWalkSpeed;
+            }
+            else
+                moveDir *= speedSwim;
+            staminaCount-=0.03f;
+
+            walk = true;
+        }
+    }
+
+    void Stay()
+    {
+        if(run == false && walk == false)
         {
-            moveDir = new Vector3(0,0,0);
+            cameraAnimator.ResetTrigger("ToRun");
+            cameraAnimator.SetTrigger("ToStay");
+            cameraAnimator.ResetTrigger("ToWalk");
         }
+    }
 
-        Rebounds();
-
+    void Jump()
+    {
         if(Input.GetKey("space"))
         {
-            if(ControlleR.isGrounded && StaminaCount >= 10 && angle < 30)
+            if(ControlleR.isGrounded && staminaCount >= 10 && angle < 30)
             {
-                moveDir.y +=JumpSpeed;
-                if(!run)
-                    moveDir.y += 0.7f;
-                else
-                    moveDir.y += 4f;
-                StaminaCount-=10;
+                jumpVelocityMoment = jumpVelocity;
+
+                staminaCount-=jumpStamina;
             }
+
             if(swim)
             {
-                moveDir.y +=UpSwimSpeed*swimFactor;
+                moveDir.y +=upSwimSpeed*swimFactor;
                 swimFactor+=0.04f;
                 if(swimFactor > 1)
                     swimFactor = 1;
             }
         }
 
-        run = false;
+        moveDir.y += jumpVelocityMoment;
+        jumpVelocityMoment-=0.05f*gravity;
+        if(jumpVelocityMoment<0)
+            jumpVelocityMoment = 0;
+        else
+        Debug.Log("Jump");
+    }
 
+
+    void Gravity()
+    {
         if(!swim)
         {
-            if(ControlleR.isGrounded)
-                moveDir.y -= Gravity*0.06f;
-            else
-                moveDir.y -= Gravity*0.02f;
+            moveDir.y -= gravity;  
             swimFactor = 0.2f;
         }
         else
-            moveDir.y -= Gravity*0.02f*6;
-        ControlleR.Move (moveDir* 0.02f*timeFactor);
-
-        transform.rotation = Quaternion.Euler(0f,Camera.GetComponent<ControllerHad>().MoveX,0f); 
-
-        gameObject.GetComponent<PlayerStats>().Stamina_Count = StaminaCount;
-        
+            moveDir.y -= gravity*0.06f;
     }
+
+    
 
     public void Rebounds()
     {
-        StaminaRebound = Skills.StaminaRebound;
-        if(Input.GetKey("s") && ControlleR.isGrounded && StaminaCount > StaminaRebound && reb1trigger == true)
+        staminaRebound = Skills.StaminaRebound;
+        if(Input.GetKey("s") && ControlleR.isGrounded && staminaCount > staminaRebound && reb1trigger == true)
             {
                 reb1trigger = false;
                 if(reb1)
                 {
                     moveDir = new Vector3(0,6,-6);
-                    StaminaCount-=StaminaRebound;
+                    staminaCount-=staminaRebound;
                     moveDir = transform.TransformDirection(moveDir);
                 }
                 else
@@ -149,13 +207,13 @@ public class ControllerBody : MonoBehaviour
             if(!Input.GetKey("s"))
                 reb1trigger = true;
 
-            if(Input.GetKey("a") && ControlleR.isGrounded && StaminaCount > StaminaRebound && reb2trigger == true)
+            if(Input.GetKey("a") && ControlleR.isGrounded && staminaCount > staminaRebound && reb2trigger == true)
             {
                 reb2trigger = false;
                 if(reb2)
                 {
                     moveDir = new Vector3(-7,6,0);
-                    StaminaCount-=StaminaRebound;
+                    staminaCount-=staminaRebound;
                     moveDir = transform.TransformDirection(moveDir);
                 }
                 else
@@ -164,13 +222,13 @@ public class ControllerBody : MonoBehaviour
             if(!Input.GetKey("a"))
                 reb2trigger = true;
 
-            if(Input.GetKey("d") && ControlleR.isGrounded && StaminaCount > StaminaRebound && reb3trigger == true)
+            if(Input.GetKey("d") && ControlleR.isGrounded && staminaCount > staminaRebound && reb3trigger == true)
             {
                 reb3trigger = false;
                 if(reb3)
                 {
                     moveDir = new Vector3(7,6,0);
-                    StaminaCount-=StaminaRebound;
+                    staminaCount-=staminaRebound;
                     moveDir = transform.TransformDirection(moveDir);
                 }
                 else

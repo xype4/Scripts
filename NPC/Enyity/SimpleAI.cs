@@ -15,7 +15,9 @@ public class SimpleAI : MonoBehaviour
     public GameObject hadLookTarget;
     public GameObject bodyLookTarget;
     public GameObject stopTrigger;
+
     public int stoppedAI; //0-не стоит 1 - стоит перед игроком
+
     private RigBuilder lookRig;
     private float walkSpeed = 1f;
     private float runSpeed = 4f;
@@ -43,19 +45,20 @@ public class SimpleAI : MonoBehaviour
 
     [Space]
     [Header("Настройки видимости")]
-    
+
     [SerializeField] private float navDistanceToTarget;
     [SerializeField] private float straightDistanceToTarget;
     [SerializeField] private float lookDistance;
-    private float bowDistance;
+    [SerializeField] private float bowDistance;
     [SerializeField] private float swordUnequipDistance;
     [SerializeField] private float attackDistance;
     [SerializeField] private float attackStayDistance;
-    [SerializeField] private float attackDistanceFinal;
-    [SerializeField] private float attackStayDistanceFinal;
+    private float attackDistanceFinal;
+    private float attackStayDistanceFinal;
 
     
     private NavMeshAgent pathAgent;
+    private NavMeshPath calculatingPathAgent;
     private Animator animator;
     public Vector3 targetPosition;
     private Vector3 AIPosition;
@@ -87,6 +90,7 @@ public class SimpleAI : MonoBehaviour
     private bool runToTarget = true;
     private bool speedFlag = false;
     private bool speedPause = false;
+    private bool coerceBow = false;
     private Vector3 hadTargetStartPosition;
     private Vector3 bodyTargetStartPosition;
 
@@ -94,13 +98,9 @@ public class SimpleAI : MonoBehaviour
     
     TaegetAttack TA;
 
-    private static bool boolConvertor(int val)
-    {
-        return val == 1 ? true : false;
-    }
-
     void Start()
     {
+        calculatingPathAgent = new NavMeshPath();
         hadTargetStartPosition = hadLookTarget.transform.localPosition;
         bodyTargetStartPosition = bodyLookTarget.transform.localPosition;
 
@@ -110,14 +110,12 @@ public class SimpleAI : MonoBehaviour
         x_OffsetTaget = Random.Range(-2f,2f);
         y_OffsetTaget = Random.Range(-2f,2f);
 
-        if(swordUnequipDistance*1.4f>=lookDistance*0.8f)
-        Debug.Log("***ОШИБКА*** SwordUnequipDistance может юыть больше LookDistance");
+        
         
         statsScript = gameObject.GetComponent<EntityStats>();
         weaponScript = attackSword.GetComponent<EntityAttack>();
 
-        swordUnequipDistance*=Random.Range(0.6f,1.4f);
-        lookDistance*=Random.Range(0.8f,1.2f);
+        lookDistance*=Random.Range(1f,1.2f);
         walkSpeed*=Random.Range(0.95f,1.05f);
         runSpeed*=Random.Range(0.95f,1.05f);
         weaponScript.damage = damage;
@@ -133,6 +131,8 @@ public class SimpleAI : MonoBehaviour
 
         if(swordUnequipDistance >= lookDistance || swordUnequipDistance <= attackDistance)
         Debug.Log("***ОШИБКА*** SwordUnequipDistance больше LookDistance или меньше AttackDistance");
+        if(swordUnequipDistance >=lookDistance)
+        Debug.Log("***ОШИБКА*** SwordUnequipDistance может юыть больше LookDistance");
 
         entityStatsScript= gameObject.GetComponent<EntityStats>();
         pathAgent = gameObject.GetComponent<NavMeshAgent>();
@@ -198,7 +198,7 @@ public class SimpleAI : MonoBehaviour
         if(starting == true)
         {
             if(friendly!=0)
-                NonFriendlySword();
+                NonFriendly();
                 
             if(friendly==0)
                 Patrol();
@@ -248,13 +248,13 @@ public class SimpleAI : MonoBehaviour
         {
             if(numberOfPatrulPoint>=patrulPoints.Count)
                 numberOfPatrulPoint = 0;
-            pathAgent.SetDestination(PutrulTargetCalculate(patrulPoints[numberOfPatrulPoint].transform.position));
+            SetPathDestination(PutrulTargetCalculate(patrulPoints[numberOfPatrulPoint].transform.position));
             walkToPoint = true;
         }
 
         if(orderPatrul == false && walkToPoint == false)
         {
-            pathAgent.SetDestination(PutrulTargetCalculate(patrulPoints[Random.Range(0,patrulPoints.Count)].transform.position));
+            SetPathDestination(PutrulTargetCalculate(patrulPoints[Random.Range(0,patrulPoints.Count)].transform.position));
             walkToPoint = true;
         }
         if(pathAgent.remainingDistance <= 2 && walkToPoint == true)
@@ -282,7 +282,7 @@ public class SimpleAI : MonoBehaviour
         StartCoroutine(SetSpeed(0f,0.35f));
         animator.SetBool("ToWalk", false);
         animator.SetBool("ToIdle", true);
-        pathAgent.SetDestination(transform.position);
+        SetPathDestination(transform.position);
         yield return new WaitForSeconds(0.1f);
         animator.SetBool("ToIdle", false);
 
@@ -296,7 +296,7 @@ public class SimpleAI : MonoBehaviour
     }
 
 
-    public void NonFriendlySword()
+    public void NonFriendly()
     {
         animationPatrol = false; walkToPoint = false; stay = false;      //Обнуление патрулирования
         if(target == null)
@@ -318,8 +318,6 @@ public class SimpleAI : MonoBehaviour
                 }
                 hadLookTarget.transform.position = Vector3.MoveTowards(hadLookTarget.transform.position, target.transform.GetChild(0).position, Time.deltaTime * 10);
                 bodyLookTarget.transform.position = Vector3.MoveTowards(bodyLookTarget.transform.position, target.transform.position, Time.deltaTime * 10);
-
-                lookRig.enabled  = true;
             }
                 
             attackDistanceFinal = 2.2f;
@@ -327,6 +325,7 @@ public class SimpleAI : MonoBehaviour
             target = player.gameObject;
             targetPosition = player.transform.position;
         }
+
         if(friendly == 2)
         {
             attackDistanceFinal = attackDistance;
@@ -340,6 +339,8 @@ public class SimpleAI : MonoBehaviour
 
             lookRig.enabled  = true;
         }
+
+
 
         if(target.GetComponent<EntityStats>())
             {
@@ -361,7 +362,6 @@ public class SimpleAI : MonoBehaviour
 
         TA = target.GetComponent<TaegetAttack>();
         AIPosition = transform.position;
-        //navDistanceToTarget = Vector3.Distance (AIPosition , TargetPosition);
         navDistanceToTarget = pathAgent.remainingDistance;
         straightDistanceToTarget = Vector3.Distance (AIPosition , targetPosition);
 
@@ -386,9 +386,30 @@ public class SimpleAI : MonoBehaviour
         if(animationStarted == true)
             return;
 
+        bool targetWatch = false;
+        RaycastHit lookArea;
+        Vector3 targetVector = target.transform.position - transform.position;
+        Ray ray = new Ray(transform.position+new Vector3(0,2,0) + Vector3.Normalize(targetVector)/2, target.transform.position - transform.position- new Vector3(0,2,0));
+        Physics.Raycast(ray, out lookArea);
+
+        if (lookArea.collider != null)
+        {
+            if (lookArea.collider.gameObject == target)
+            {
+                targetWatch = true;
+            }   
+        }
+
         if(straightDistanceToTarget > lookDistance)
         {
             TargetDiable();
+            return;
+        }
+
+        if ((straightDistanceToTarget < bowDistance && navDistanceToTarget > swordUnequipDistance && targetWatch == true) || coerceBow == true)
+        {
+            Debug.Log("123");
+            animator.SetTrigger("FootStay");
             return;
         }
 
@@ -405,7 +426,7 @@ public class SimpleAI : MonoBehaviour
             animator.SetBool("ToIdle", false);
             animator.SetTrigger("FootRun");
             animator.SetTrigger("HandsRun");
-            pathAgent.SetDestination(targetPosition);
+            SetPathDestination(targetPosition);
         }
 
         if(navDistanceToTarget <= swordUnequipDistance && navDistanceToTarget > swordUnequipDistance && animationStarted == false )
@@ -433,7 +454,7 @@ public class SimpleAI : MonoBehaviour
                 animator.SetBool("ToWalk",false);
                 animator.SetTrigger("FootRun");
                 animator.SetTrigger("HandsRun");
-                pathAgent.SetDestination(targetPosition);
+                SetPathDestination(targetPosition);
             }
         }
 
@@ -461,9 +482,11 @@ public class SimpleAI : MonoBehaviour
 
         if(navDistanceToTarget < attackDistanceFinal*2.5f && navDistanceToTarget > attackStayDistanceFinal*1.7f && attackTarget == false && animationStarted == false)
         {
+            lookRig.enabled  = true;
+
             if(TA.AttackCount>=3)
             {
-                pathAgent.SetDestination(targetPosition);  
+                SetPathDestination(targetPosition);  
                 animator.ResetTrigger("FootRun");
                 animator.ResetTrigger("HandsRun");
                 animator.ResetTrigger("SwordsRun");
@@ -482,7 +505,7 @@ public class SimpleAI : MonoBehaviour
                 waitAttack = false;
             }
         }    
-            pathAgent.SetDestination(targetPosition);
+            SetPathDestination(targetPosition);
 
         if(navDistanceToTarget < attackDistanceFinal*2f-0.2f && navDistanceToTarget>attackDistanceFinal*2f-0.5f)
         {
@@ -512,6 +535,21 @@ public class SimpleAI : MonoBehaviour
         }     
     }
 
+    private void SetPathDestination(Vector3 targetPosition)
+    {
+        pathAgent.SetDestination(targetPosition);
+        pathAgent.CalculatePath(targetPosition, calculatingPathAgent);
+
+        if(calculatingPathAgent.status != NavMeshPathStatus.PathComplete || pathAgent.remainingDistance <= 0.5)
+        {
+            coerceBow = true;
+            animator.SetTrigger("ToIdleSword");
+            pathAgent.SetDestination(gameObject.transform.position);
+
+        }
+        else
+            coerceBow = false;
+    }
 
     private void Attack()
     {
@@ -535,7 +573,7 @@ public class SimpleAI : MonoBehaviour
                 if(isAttack == false)
                 {
                     animator.SetTrigger("SwordsRun");
-                    pathAgent.SetDestination(targetPosition);
+                    SetPathDestination(targetPosition);
                     
                 }
                     
@@ -572,7 +610,7 @@ public class SimpleAI : MonoBehaviour
     public void TargetDiable()
     {
         friendly=0;
-        pathAgent.SetDestination(transform.position);
+        SetPathDestination(transform.position);
         target = null;
         ResetAnimations();
             
@@ -910,7 +948,7 @@ public class SimpleAI : MonoBehaviour
 
     public void die()
     {
-        pathAgent.SetDestination(transform.position);
+        SetPathDestination(transform.position);
         lookRig.enabled = false;
 
         if(attackSword.activeSelf == true)

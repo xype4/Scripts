@@ -1,26 +1,24 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UI;
+using UnityEngine.UI; 
 using System.Runtime.Serialization.Formatters.Binary;
 using System.IO;
 
 public class ControllerHad : MonoBehaviour
 {
-    [HideInInspector]
-    public float Sensetive;
-    [HideInInspector]
-    public float MoveX = 0f;
+    [HideInInspector] public float Sensetive;
+    [HideInInspector] public float MoveX = 0f;
     private float MoveY = 0f;
     private float AngleY = 80;
     private float time_Factor;
     public SettingsSave SettingsMenu;
-    private GameObject Body;
+    public ControllerBody Body;
     private string SensetivePath;
+    public GameObject CameraMain;
     
     void Start()
     {
-        Body = transform.parent.gameObject;
 
         SensetivePath = Application.persistentDataPath + "/Settings.info";
         if (File.Exists(SensetivePath))
@@ -36,14 +34,14 @@ public class ControllerHad : MonoBehaviour
     }
     void Update()
     {   
-        time_Factor = Body.GetComponent<ControllerBody>().timeFactor;
+        time_Factor = Body.timeFactor;
         MoveY += Input.GetAxis("Mouse Y")* Sensetive*Time.deltaTime * 70 * time_Factor;
         MoveX += Input.GetAxis("Mouse X")* Sensetive*Time.deltaTime * 70 * time_Factor;
         if(MoveX > 360f) MoveX -=360f;
         if(MoveX < -360f) MoveX +=360f;
         if(MoveY > AngleY) MoveY =AngleY;
         if(MoveY < -AngleY) MoveY =-AngleY;
-        transform.rotation = Quaternion.Euler(-MoveY,MoveX,0f);
+        CameraMain.transform.rotation = Quaternion.Euler(-MoveY,MoveX,0f);
     }
     public void Sens(float sens)
     {

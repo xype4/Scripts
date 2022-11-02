@@ -51,7 +51,7 @@ public class AlchVisible : MonoBehaviour
     {
         AlchLvl = Skills.AlchLvl;
         CraftArmorLvl = Skills.MetalLvl;
-        if(Input.GetKeyDown("i"))
+        if(Input.GetKeyDown("i") || Input.GetKeyDown(KeyCode.Escape))
         {
             inAlch = false;
 
