@@ -171,8 +171,6 @@ public class ControllerBody : MonoBehaviour
         jumpVelocityMoment-=0.05f*gravity;
         if(jumpVelocityMoment<0)
             jumpVelocityMoment = 0;
-        else
-        Debug.Log("Jump");
     }
 
 

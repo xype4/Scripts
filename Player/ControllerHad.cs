@@ -16,6 +16,7 @@ public class ControllerHad : MonoBehaviour
     public ControllerBody Body;
     private string SensetivePath;
     public GameObject CameraMain;
+    public float dump;
     
     void Start()
     {
@@ -35,8 +36,10 @@ public class ControllerHad : MonoBehaviour
     void Update()
     {   
         time_Factor = Body.timeFactor;
+
         MoveY += Input.GetAxis("Mouse Y")* Sensetive*Time.deltaTime * 70 * time_Factor;
         MoveX += Input.GetAxis("Mouse X")* Sensetive*Time.deltaTime * 70 * time_Factor;
+        
         if(MoveX > 360f) MoveX -=360f;
         if(MoveX < -360f) MoveX +=360f;
         if(MoveY > AngleY) MoveY =AngleY;

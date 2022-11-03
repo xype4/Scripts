@@ -14,10 +14,7 @@ public class SimpleAI : MonoBehaviour
     public GameObject target; 
     public GameObject hadLookTarget;
     public GameObject bodyLookTarget;
-    public GameObject stopTrigger;
-
     public int stoppedAI; //0-не стоит 1 - стоит перед игроком
-
     private RigBuilder lookRig;
     private float walkSpeed = 1f;
     private float runSpeed = 4f;
@@ -49,16 +46,14 @@ public class SimpleAI : MonoBehaviour
     [SerializeField] private float navDistanceToTarget;
     [SerializeField] private float straightDistanceToTarget;
     [SerializeField] private float lookDistance;
-    [SerializeField] private float bowDistance;
     [SerializeField] private float swordUnequipDistance;
     [SerializeField] private float attackDistance;
     [SerializeField] private float attackStayDistance;
-    private float attackDistanceFinal;
-    private float attackStayDistanceFinal;
+    [SerializeField] private float attackDistanceFinal;
+    [SerializeField] private float attackStayDistanceFinal;
 
-    
+
     private NavMeshAgent pathAgent;
-    private NavMeshPath calculatingPathAgent;
     private Animator animator;
     public Vector3 targetPosition;
     private Vector3 AIPosition;
@@ -68,39 +63,39 @@ public class SimpleAI : MonoBehaviour
     public GameObject attackSword;
     public GameObject stayShield;
     public GameObject attackShield;
-    public GameObject stayBow;
-    public GameObject attackBow;
     private PlayerStats playerStats;
     private EntityAttack weaponScript;
     private EntityStats statsScript;
 
     public float attackSpeed;
     public float damage;
+    private EntityStats entityStatsScript;
+
     private bool weaponOn = false;
     private bool shieldOn = false;
-    private bool bowOn = false;
-    private EntityStats entityStatsScript;
-    private bool isAttack = false;
+    private bool isAttack = false; //атака или ожидание
 
-    public bool animationStarted = false;
-    private bool animationPatrol = false;
-    private bool attackTarget = false;
-    private bool waitAttack = false;
-    private bool starting = false;
-    private bool runToTarget = true;
-    private bool speedFlag = false;
-    private bool speedPause = false;
-    private bool coerceBow = false;
+    public bool animationStarted = false; // есть анимация оружия или щита
+    private bool animationPatrol = false; // есть анимация деэкипировки для патруля
+    private bool attackTarget = false; //цель свободная для атаки
+    private bool waitAttack = false; //ожидание цели для атаки
+    private bool starting = false; //ИИ инициализирован
+    private bool runToTarget = true;//бежит к цели
+    private bool speedFlag = false;//скорость меняется
     private Vector3 hadTargetStartPosition;
     private Vector3 bodyTargetStartPosition;
 
     public int random = 0;
-    
+
     TaegetAttack TA;
+
+    private static bool boolConvertor(int val)
+    {
+        return val == 1 ? true : false;
+    }
 
     void Start()
     {
-        calculatingPathAgent = new NavMeshPath();
         hadTargetStartPosition = hadLookTarget.transform.localPosition;
         bodyTargetStartPosition = bodyLookTarget.transform.localPosition;
 
@@ -110,12 +105,14 @@ public class SimpleAI : MonoBehaviour
         x_OffsetTaget = Random.Range(-2f,2f);
         y_OffsetTaget = Random.Range(-2f,2f);
 
-        
-        
+        if(swordUnequipDistance*1.4f>=lookDistance*0.8f)
+        Debug.Log("***ОШИБКА*** SwordUnequipDistance может юыть больше LookDistance");
+
         statsScript = gameObject.GetComponent<EntityStats>();
         weaponScript = attackSword.GetComponent<EntityAttack>();
 
-        lookDistance*=Random.Range(1f,1.2f);
+        swordUnequipDistance*=Random.Range(0.6f,1.4f);
+        lookDistance*=Random.Range(0.8f,1.2f);
         walkSpeed*=Random.Range(0.95f,1.05f);
         runSpeed*=Random.Range(0.95f,1.05f);
         weaponScript.damage = damage;
@@ -131,13 +128,11 @@ public class SimpleAI : MonoBehaviour
 
         if(swordUnequipDistance >= lookDistance || swordUnequipDistance <= attackDistance)
         Debug.Log("***ОШИБКА*** SwordUnequipDistance больше LookDistance или меньше AttackDistance");
-        if(swordUnequipDistance >=lookDistance)
-        Debug.Log("***ОШИБКА*** SwordUnequipDistance может юыть больше LookDistance");
 
         entityStatsScript= gameObject.GetComponent<EntityStats>();
         pathAgent = gameObject.GetComponent<NavMeshAgent>();
         animator = gameObject.GetComponent<Animator>();
-        
+
         if(staySword != null)
         staySword.SetActive (true);
         if(attackSword != null)
@@ -147,11 +142,6 @@ public class SimpleAI : MonoBehaviour
         stayShield.SetActive (true);
         if(attackShield != null)
         attackShield.SetActive (false);
-
-        if(stayBow != null)
-        stayBow.SetActive (true);
-        if(attackBow != null)
-        attackBow.SetActive (false);
 
         StartCoroutine(IdleChange());
         StartCoroutine(StartaI());
@@ -198,8 +188,8 @@ public class SimpleAI : MonoBehaviour
         if(starting == true)
         {
             if(friendly!=0)
-                NonFriendly();
-                
+                NonFriendlySword();
+
             if(friendly==0)
                 Patrol();
         }
@@ -210,9 +200,9 @@ public class SimpleAI : MonoBehaviour
         if(animationPatrol == true)
             return;
         animationStarted = false; isAttack = false;     //Обнуление атаки
-        if(shieldOn == true || weaponOn == true || bowOn == true)
+        if(shieldOn == true || weaponOn == true)
         {
-            StartCoroutine(UnequipAllPatrol(true));
+            StartCoroutine(UnequipAllPatrol());
             return;
         }
         if(stay)
@@ -241,22 +231,23 @@ public class SimpleAI : MonoBehaviour
             animator.SetBool("ToWalk",true);
         else
             animator.SetBool("ToWalk",false);
-    
+
         StartCoroutine(SetSpeed(walkSpeed,0.2f));
 
         if(orderPatrul == true && walkToPoint == false)
         {
             if(numberOfPatrulPoint>=patrulPoints.Count)
                 numberOfPatrulPoint = 0;
-            SetPathDestination(PutrulTargetCalculate(patrulPoints[numberOfPatrulPoint].transform.position));
+            pathAgent.SetDestination(PutrulTargetCalculate(patrulPoints[numberOfPatrulPoint].transform.position));
             walkToPoint = true;
         }
 
         if(orderPatrul == false && walkToPoint == false)
         {
-            SetPathDestination(PutrulTargetCalculate(patrulPoints[Random.Range(0,patrulPoints.Count)].transform.position));
+            pathAgent.SetDestination(PutrulTargetCalculate(patrulPoints[Random.Range(0,patrulPoints.Count)].transform.position));
             walkToPoint = true;
         }
+
         if(pathAgent.remainingDistance <= 2 && walkToPoint == true)
         {
             if((Random.Range(0f,1f) <= probabilityStayOnTarget))
@@ -282,7 +273,7 @@ public class SimpleAI : MonoBehaviour
         StartCoroutine(SetSpeed(0f,0.35f));
         animator.SetBool("ToWalk", false);
         animator.SetBool("ToIdle", true);
-        SetPathDestination(transform.position);
+        pathAgent.SetDestination(transform.position);
         yield return new WaitForSeconds(0.1f);
         animator.SetBool("ToIdle", false);
 
@@ -296,7 +287,7 @@ public class SimpleAI : MonoBehaviour
     }
 
 
-    public void NonFriendly()
+    public void NonFriendlySword()
     {
         animationPatrol = false; walkToPoint = false; stay = false;      //Обнуление патрулирования
         if(target == null)
@@ -306,7 +297,7 @@ public class SimpleAI : MonoBehaviour
 
         if(friendly == 0)
             return;
-        
+
         if(friendly == 1)
         {
             if(target == player)
@@ -316,16 +307,17 @@ public class SimpleAI : MonoBehaviour
                     TargetDiable();
                     return;
                 }
-                hadLookTarget.transform.position = Vector3.MoveTowards(hadLookTarget.transform.position, target.transform.GetChild(0).position, Time.deltaTime * 10);
-                bodyLookTarget.transform.position = Vector3.MoveTowards(bodyLookTarget.transform.position, target.transform.position, Time.deltaTime * 10);
+                hadLookTarget.transform.position = Vector3.MoveTowards(hadLookTarget.transform.position, target.transform.GetChild(0).position, Time.deltaTime * 50);
+                bodyLookTarget.transform.position = Vector3.MoveTowards(bodyLookTarget.transform.position, target.transform.position, Time.deltaTime * 50);
+
+                lookRig.enabled  = true;
             }
-                
+
             attackDistanceFinal = 2.2f;
             attackStayDistanceFinal = 2.4f;
             target = player.gameObject;
             targetPosition = player.transform.position;
         }
-
         if(friendly == 2)
         {
             attackDistanceFinal = attackDistance;
@@ -334,42 +326,40 @@ public class SimpleAI : MonoBehaviour
                 targetPosition = target.transform.position;
 
 
-            hadLookTarget.transform.position = Vector3.MoveTowards(hadLookTarget.transform.position, target.transform.position+ new Vector3(0,1,0), Time.deltaTime * 10);
-            bodyLookTarget.transform.position = Vector3.MoveTowards(bodyLookTarget.transform.position, target.transform.position, Time.deltaTime * 10);
+            hadLookTarget.transform.position = Vector3.MoveTowards(hadLookTarget.transform.position, target.transform.position+ new Vector3(0,1,0), Time.deltaTime * 50);
+            bodyLookTarget.transform.position = Vector3.MoveTowards(bodyLookTarget.transform.position, target.transform.position, Time.deltaTime * 50);
 
             lookRig.enabled  = true;
         }
 
-
-
         if(target.GetComponent<EntityStats>())
+        {
+            if(target.GetComponent<EntityStats>().die == true)
             {
-                if(target.GetComponent<EntityStats>().die == true)
+                GameObject targ = TargetSearch();
+                if(targ!=null)
                 {
-                    GameObject targ = TargetSearch();
-                    if(targ!=null)
-                    {
-                        target = targ;
-                    }
-                    else
-                    {
-                        friendly=0;
-                        ResetAnimations();
-                        return;
-                    }
+                    target = targ;
+                }
+                else
+                {
+                    friendly=0;
+                    ResetAnimations();
+                    return;
                 }
             }
+        }
 
+        pathAgent.SetDestination(targetPosition);
         TA = target.GetComponent<TaegetAttack>();
         AIPosition = transform.position;
-        navDistanceToTarget = pathAgent.remainingDistance;
+        navDistanceToTarget = GetPathRemainingDistance(pathAgent);
         straightDistanceToTarget = Vector3.Distance (AIPosition , targetPosition);
 
 
 
         if(!(animator.GetCurrentAnimatorStateInfo(1).IsName("Armature|Run") || animator.GetCurrentAnimatorStateInfo(1).IsName("Armature|Walk")))
         {
-            if(speedPause == false)
             pathAgent.speed = 0f;
         }
 
@@ -385,6 +375,7 @@ public class SimpleAI : MonoBehaviour
 
         if(animationStarted == true)
             return;
+
 
         bool targetWatch = false;
         RaycastHit lookArea;
@@ -406,14 +397,18 @@ public class SimpleAI : MonoBehaviour
             return;
         }
 
-        if ((straightDistanceToTarget < bowDistance && navDistanceToTarget > swordUnequipDistance && targetWatch == true) || coerceBow == true)
+        if(navDistanceToTarget== -1)
         {
-            Debug.Log("123");
-            animator.SetTrigger("FootStay");
+            pathAgent.SetDestination(targetPosition);
+            animator.ResetTrigger("Attack");
+            animator.ResetTrigger("SwordsRun");
+            animator.SetInteger("AttackSelect", 0);
+            animator.SetTrigger("ToAttack");
+            animator.SetTrigger("ToIdleSword");
             return;
         }
 
-        if(straightDistanceToTarget <= lookDistance && navDistanceToTarget > swordUnequipDistance && animationStarted == false)
+        if(straightDistanceToTarget <= lookDistance && navDistanceToTarget > swordUnequipDistance && animationStarted == false && targetWatch==true)
         {
             waitAttack = false;
             if(attackTarget == true)
@@ -426,36 +421,23 @@ public class SimpleAI : MonoBehaviour
             animator.SetBool("ToIdle", false);
             animator.SetTrigger("FootRun");
             animator.SetTrigger("HandsRun");
-            SetPathDestination(targetPosition);
+            pathAgent.SetDestination(targetPosition);
         }
 
-        if(navDistanceToTarget <= swordUnequipDistance && navDistanceToTarget > swordUnequipDistance && animationStarted == false )
+        if(navDistanceToTarget <= swordUnequipDistance && navDistanceToTarget > swordUnequipDistance && animationStarted == false)//Что-то странное
         {
             animator.SetBool("ToIdle", false);
-            if(stayBow!=null)
+            waitAttack = false;
+            if(attackTarget == true)
             {
-                animator.SetTrigger("IdleExit");
-                transform.LookAt(new Vector3(target.transform.position.x, transform.position.y ,target.transform.position.z));
-                animator.SetInteger("AttackSelect", 0);
-                animator.ResetTrigger("SwordsRun");
-                animator.SetTrigger("FootStay");
-                StartCoroutine(Fire());
-                return;
+                attackTarget = false;
+                TA.AttackCount--;
             }
-            else
-            {   
-                waitAttack = false;
-                if(attackTarget == true)
-                {
-                    attackTarget = false;
-                    TA.AttackCount--;
-                }
 
-                animator.SetBool("ToWalk",false);
-                animator.SetTrigger("FootRun");
-                animator.SetTrigger("HandsRun");
-                SetPathDestination(targetPosition);
-            }
+            animator.SetBool("ToWalk",false);
+            animator.SetTrigger("FootRun");
+            animator.SetTrigger("HandsRun");
+            pathAgent.SetDestination(targetPosition);
         }
 
         if(navDistanceToTarget <= swordUnequipDistance && navDistanceToTarget >= attackStayDistanceFinal && animationStarted == false)
@@ -482,11 +464,9 @@ public class SimpleAI : MonoBehaviour
 
         if(navDistanceToTarget < attackDistanceFinal*2.5f && navDistanceToTarget > attackStayDistanceFinal*1.7f && attackTarget == false && animationStarted == false)
         {
-            lookRig.enabled  = true;
-
             if(TA.AttackCount>=3)
             {
-                SetPathDestination(targetPosition);  
+                pathAgent.SetDestination(targetPosition);  
                 animator.ResetTrigger("FootRun");
                 animator.ResetTrigger("HandsRun");
                 animator.ResetTrigger("SwordsRun");
@@ -505,7 +485,7 @@ public class SimpleAI : MonoBehaviour
                 waitAttack = false;
             }
         }    
-            SetPathDestination(targetPosition);
+        pathAgent.SetDestination(targetPosition);
 
         if(navDistanceToTarget < attackDistanceFinal*2f-0.2f && navDistanceToTarget>attackDistanceFinal*2f-0.5f)
         {
@@ -535,21 +515,6 @@ public class SimpleAI : MonoBehaviour
         }     
     }
 
-    private void SetPathDestination(Vector3 targetPosition)
-    {
-        pathAgent.SetDestination(targetPosition);
-        pathAgent.CalculatePath(targetPosition, calculatingPathAgent);
-
-        if(calculatingPathAgent.status != NavMeshPathStatus.PathComplete || pathAgent.remainingDistance <= 0.5)
-        {
-            coerceBow = true;
-            animator.SetTrigger("ToIdleSword");
-            pathAgent.SetDestination(gameObject.transform.position);
-
-        }
-        else
-            coerceBow = false;
-    }
 
     private void Attack()
     {
@@ -558,7 +523,7 @@ public class SimpleAI : MonoBehaviour
 
         animator.ResetTrigger("SwordsRun");
         animator.ResetTrigger("ToIdleSword");
-        
+
         if(isAttack == false)
             StartCoroutine(AttackTime());
     }
@@ -573,14 +538,14 @@ public class SimpleAI : MonoBehaviour
                 if(isAttack == false)
                 {
                     animator.SetTrigger("SwordsRun");
-                    SetPathDestination(targetPosition);
-                    
+                    pathAgent.SetDestination(targetPosition);
+
                 }
-                    
+
                 animator.SetTrigger("FootRun");
             }
         }
-            
+
         else
             if(TA.AttackCount<3)     
                 AttackChoise(slow);
@@ -601,7 +566,7 @@ public class SimpleAI : MonoBehaviour
             animator.ResetTrigger("ToAttack");
             animator.SetTrigger("FootWalk");
         }
-            
+
         animator.ResetTrigger("ToIdleSword");
         attackTarget = true;
         waitAttack = false;
@@ -610,10 +575,10 @@ public class SimpleAI : MonoBehaviour
     public void TargetDiable()
     {
         friendly=0;
-        SetPathDestination(transform.position);
+        pathAgent.SetDestination(transform.position);
         target = null;
         ResetAnimations();
-            
+
         StartCoroutine(LookDisableSmooth());
     }
 
@@ -638,7 +603,7 @@ public class SimpleAI : MonoBehaviour
             StartCoroutine(RotationToTagret());
             yield return new WaitForSeconds(attackTime/5);
         }
-        
+
 
         isAttack = false;
     }
@@ -685,28 +650,6 @@ public class SimpleAI : MonoBehaviour
         animator.SetTrigger("SwordRotationJumpExit");
     }
 
-    
-
-    IEnumerator BowUnEquip(bool animFalse)
-    {
-        animator.SetTrigger("BowOff");
-        bowOn = true;
-        animationStarted = true;
-        yield return new WaitForSeconds(2f);
-        stayBow.SetActive(false);
-        attackBow.SetActive(true);
-        if(animFalse)
-        animationStarted = false;
-    }
-
-    IEnumerator Fire()
-    {
-        animationStarted = true;
-        animator.SetTrigger("BowFire");
-        yield return new WaitForSeconds(4f);
-        animationStarted = false;
-    }
-
     public void UnequipEquipFull()
     {
         if((weaponOn == false && attackSword!=null && staySword!=null) || (shieldOn == false && attackShield!=null && stayShield!=null))
@@ -738,34 +681,9 @@ public class SimpleAI : MonoBehaviour
         }
     }
 
-    IEnumerator BowEquip()
-    {
-        animator.SetTrigger("BowOn");
-        bowOn = true;
-        animationStarted = true;
-        yield return StartCoroutine(UnequipAllPatrol(false));
-        stayBow.SetActive(false);
-        attackBow.SetActive(true);
-        yield return new WaitForSeconds(2f);
-        animationStarted = false;
-    }
-    
-    IEnumerator UnequipAllPatrol (bool bowUnequip)
+    IEnumerator UnequipAllPatrol ()
     {
         animationPatrol = true;
-
-        if(bowOn == true && bowUnequip == true)
-        {
-            animator.SetTrigger("BowOff");
-            bowOn = false;
-
-            yield return new WaitForSeconds(2f);
-
-            if(stayBow != null)
-                stayBow.SetActive(false);
-            if(attackBow != null)
-                attackBow.SetActive(true);
-        }
 
         if(shieldOn == true)
         {
@@ -818,11 +736,6 @@ public class SimpleAI : MonoBehaviour
     {
         animationStarted = true;
 
-        if(bowOn == true)
-        {
-            yield return StartCoroutine(BowUnEquip(false));
-        }
-
         if(shieldOn == false)
         {
             animator.SetTrigger("ShieldON");   
@@ -857,11 +770,6 @@ public class SimpleAI : MonoBehaviour
     {
         animationStarted = true;
 
-        if(bowOn == true)
-        {
-            yield return StartCoroutine(BowUnEquip(false));
-        }
-
         if(weaponOn == false)
         {
             animator.SetTrigger("SwordGet");   
@@ -873,7 +781,7 @@ public class SimpleAI : MonoBehaviour
             weaponOn = false;
 
         }
-        
+
         yield return new WaitForSeconds(0.5f);
 
         if(weaponOn == true)
@@ -907,7 +815,7 @@ public class SimpleAI : MonoBehaviour
                     friendly = 1;
                     return player;
                 }
-                    
+
                 if(hitColliders[i].GetComponent<EntityStats>())
                 {
                     if(hitColliders[i].GetComponent<EntityStats>().die == false)
@@ -921,7 +829,7 @@ public class SimpleAI : MonoBehaviour
                                     friendly = 2;
                                     return PotentialTarget.gameObject;
                                 }
-                                    
+
                             }
                         }
                 }
@@ -948,7 +856,7 @@ public class SimpleAI : MonoBehaviour
 
     public void die()
     {
-        SetPathDestination(transform.position);
+        pathAgent.SetDestination(transform.position);
         lookRig.enabled = false;
 
         if(attackSword.activeSelf == true)
@@ -958,6 +866,23 @@ public class SimpleAI : MonoBehaviour
             attackSword.GetComponent<EntityAttack>().enabled = false;
         }
     }
+
+    public static float GetPathRemainingDistance(NavMeshAgent navMeshAgent)
+    {
+        if (navMeshAgent.pathPending ||
+            navMeshAgent.pathStatus == NavMeshPathStatus.PathInvalid ||
+            navMeshAgent.path.corners.Length == 0)
+            return -1f;
+
+        float distance = 0.0f;
+        for (int i = 0; i < navMeshAgent.path.corners.Length - 1; ++i)
+        {
+            distance += Vector3.Distance(navMeshAgent.path.corners[i], navMeshAgent.path.corners[i + 1]);
+        }
+
+        return distance;
+    }
+
     /*----------------ИНКАПСУЛЯЦИЯ---------------*/
 
     public void SetAttackSpeedBase(float x)
