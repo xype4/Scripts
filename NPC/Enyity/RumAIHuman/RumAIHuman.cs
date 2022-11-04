@@ -17,7 +17,10 @@ public class RumAIHuman : MonoBehaviour
     private Vector3 bodyTargetStartPosition;
     private float x_OffsetTaget;
     private float y_OffsetTaget;
-    public int stoppedAI; //0-не стоит 1 - стоит перед игроком
+    [HideInInspector] public int stoppedAI; //0-не стоит 1 - стоит перед игроком
+    [Tooltip("Вероятность ожидания противника в бою, ИИ сам не подходит близко")]
+     [Range(0f, 1f)]
+    public int waitTargetChance = 20;
     private RigBuilder _rigBuilder;
     private float walkSpeed = 1f;
     private float runSpeed = 4f;
@@ -41,23 +44,27 @@ public class RumAIHuman : MonoBehaviour
     public float minStayTime = 1f;
     public float maxStayTime = 5f;
     private int numberOfPatrolPoint = 0;
-
+    [Tooltip("Шанс того, что ИИ всегда будет со щитом")]
+    [Range(0, 100)]
+    public float chanceUnequipShield = 0;
+    [Tooltip("Шанс того, что ИИ остановится на точке")]
     [Range(0f, 1f)]
     public float probabilityStayOnTarget = 0;
     [HideInInspector] public bool stoppedFrontPlayer; //Ожидание при встрече игрока
     [HideInInspector] public bool stoppedFrontPlayerFlag = false; //Ожидание при встрече игрока флаг для однократного срабатывания пофорота головы поумолчанию
+    [HideInInspector] public bool rotationPatrolFlag = false; //Ожидание при встрече повороте по направлению
 
     [Space]
     [Header("Настройки видимости")]
 
-    [SerializeField] private float navDistanceToTarget;
-    [SerializeField] private float straightDistanceToTarget;
+    private float navDistanceToTarget;
+    private float straightDistanceToTarget;
     [SerializeField] private float lookDistance;
     [SerializeField] private float swordUnequipDistance;
     [SerializeField] private float attackDistance;
     [SerializeField] private float attackStayDistance;
-    [SerializeField] private float attackDistanceFinal;
-    [SerializeField] private float attackStayDistanceFinal;
+    private float attackDistanceFinal;
+    private float attackStayDistanceFinal;
 
 
     private UnityEngine.AI.NavMeshAgent _navMeshAgent;
@@ -71,9 +78,9 @@ public class RumAIHuman : MonoBehaviour
     public GameObject attackSword;
     public GameObject stayShield;
     public GameObject attackShield;
-    private PlayerStats playerStats;
-    private EntityAttack weaponScript;
-    private EntityStats statsScript;
+    private PlayerStats _playerStats;
+    private EntityAttack _entityAttack;
+    private EntityStats _entityStats;
 
     public float attackSpeed;
     public float damage;
@@ -83,7 +90,7 @@ public class RumAIHuman : MonoBehaviour
     private bool shieldOn = false;
     private bool isAttack = false; //атака или ожидание
 
-    public bool animationStarted = false; // есть анимация оружия или щита
+    private bool animationStarted = false; // есть анимация оружия или щита
     private bool animationPatrol = false; // есть анимация деэкипировки для патруля
     private bool attackTarget = false; //цель свободная для атаки
     private bool waitAttack = false; //ожидание цели для атаки
@@ -91,8 +98,8 @@ public class RumAIHuman : MonoBehaviour
     private bool runToTarget = false;//подбежит к цели при удалении в битве
     private bool speedFlag = false;//скорость меняется
 
-    public int random = 0;
-    public int randomCostant = 0;
+    private int random = 0;
+    private int randomCostant = 0;
 
     TaegetAttack TA;
 
@@ -108,12 +115,21 @@ public class RumAIHuman : MonoBehaviour
                 patrolPoints.Add(patrolPointsContainer.transform.GetChild(i).gameObject);
 
         //------------------------------------ИНИЦИАЛИЗАЦИЯ КЛАССОВ ДЛЯ ИИ-------------------------
-        _rigBuilder = gameObject.GetComponent<RigBuilder>();
-        _rigBuilder.enabled  = false;
+
+        _entityStats = gameObject.GetComponent<EntityStats>();
+        _entityAttack = attackSword.GetComponent<EntityAttack>();
+        _playerStats = player.GetComponent<PlayerStats>();
         _navMeshAgent = gameObject.GetComponent<UnityEngine.AI.NavMeshAgent>();
         _animator = gameObject.GetComponent<Animator>();
-        hadTargetStartPosition = hadLookTarget.transform.localPosition;
-        bodyTargetStartPosition = bodyLookTarget.transform.localPosition;
+        
+        _rigBuilder = gameObject.GetComponent<RigBuilder>();
+        _rigBuilder.enabled  = false;
+            hadTargetStartPosition = hadLookTarget.transform.localPosition;
+            bodyTargetStartPosition = bodyLookTarget.transform.localPosition;
+
+        //------------------------------------ИНИЦИАЛИЗАЦИЯ РАНДОМАЙЗЕРОВ-----------------------------
+        randomCostant = Random.Range(1,100);
+        StartCoroutine(Cyclic());
 
 
         //------------------------------------ИНИЦИАЛИЗАЦИЯ ЭКИПИРОВКИ-----------------------------
@@ -127,8 +143,10 @@ public class RumAIHuman : MonoBehaviour
         if(attackShield != null)
         attackShield.SetActive (false);
 
-        randomCostant = Random.Range(1,100);
-        StartCoroutine(Cyclic());
+        
+        
+        if(randomCostant < chanceUnequipShield)
+            StartCoroutine(ShieldEquip());
     }
 
     IEnumerator Cyclic ()
@@ -139,7 +157,7 @@ public class RumAIHuman : MonoBehaviour
             _animator.SetInteger("Idle", Random.Range(1,3));
             target = TargetSearch();
             i++;
-            if(i == 10)
+            if(i == 3)
             {
                 i = 0;
                 random = Random.Range(1,100);
@@ -151,15 +169,12 @@ public class RumAIHuman : MonoBehaviour
 
     void Update()
     {
-        if(Input.GetKeyDown("y")&& animationStarted == false)
-            StartCoroutine(ShieldEquipUneguip(true));
-        if(Input.GetKeyDown("u")&& animationStarted == false)
-            StartCoroutine(SwordEquipUneguip(true));
+        // Debug.DrawLine(gameObject.transform.position, gameObject.transform.position+DirectionNavMeshPath(_navMeshAgent, gameObject), Color.red, 2.5f, false);
+        if(Input.GetKeyDown("y"))
+            {
+                Debug.Log(AnglePathLine());
+            }
 
-        if(Input.GetKeyDown("h")&& animationStarted == false)
-            StartCoroutine(AllEquip());
-        if(Input.GetKeyDown("j")&& animationStarted == false)
-            StartCoroutine(AllUnequip());
 
 
         
@@ -203,7 +218,13 @@ public class RumAIHuman : MonoBehaviour
 
 
     void Patrol()
-    {
+    {   
+        //Убирание меча и возможно щита для партуля
+        if(randomCostant > chanceUnequipShield)
+            StartCoroutine(AllUnequip());
+        else
+            StartCoroutine(SwordUnequip());
+
         //Поворот головы к игроку при приблежении
         if(stoppedFrontPlayer == true)  
         {
@@ -221,9 +242,9 @@ public class RumAIHuman : MonoBehaviour
             }
         }
 
-
+        
         //Движение к точке
-        if(stay == true)
+        if(stay == true|| rotationPatrolFlag == true)
             return;
 
         SetWalkAnimations();
@@ -240,6 +261,12 @@ public class RumAIHuman : MonoBehaviour
         {
             _navMeshAgent.SetDestination(PutrolTargetCalculate(patrolPoints[Random.Range(0,patrolPoints.Count)].transform.position, x_OffsetTaget ,y_OffsetTaget));
             walkToPoint = true;
+        }
+
+        if(Mathf.Abs(AnglePathLine())>25)
+        {
+            StartCoroutine(PatrolRotateToPath());
+            return;
         }
         
         //Достижение точки
@@ -282,9 +309,6 @@ public class RumAIHuman : MonoBehaviour
     {
     
         //Обнуление патрулирования и первичное обнаружение цели
-
-
-
         animationPatrol = false; walkToPoint = false; stay = false;      
         if(target == null)
         {
@@ -294,9 +318,6 @@ public class RumAIHuman : MonoBehaviour
 
 
         //Финальное обнаружение целей и расстояний
-
-
-
         _navMeshAgent.SetDestination(targetPosition);
         TA = target.GetComponent<TaegetAttack>();
         AIPosition = transform.position;
@@ -313,8 +334,6 @@ public class RumAIHuman : MonoBehaviour
 
 
         //Обработка по расстоянию до цели
-
-
 
         //Цель очень далека
         if(straightDistanceToTarget > lookDistance)
@@ -418,12 +437,20 @@ public class RumAIHuman : MonoBehaviour
     {
         _navMeshAgent.SetDestination(targetPosition);
 
-        SetRunFootAnimations();
 
         if(animationStarted == false)   //Анимация рук при отсутствии оных
         {
             SetRunHandsAnimations();
+
+            if(random < waitTargetChance)
+            {
+                SetStayAnimations();
+                return;
+            }
         }
+
+        SetRunFootAnimations();
+
     }
 
     private void TargetNear()
@@ -433,6 +460,7 @@ public class RumAIHuman : MonoBehaviour
         runToTarget = true;
         SetRunFootAnimations();
         SetRunHandsAnimations();
+        HitAndEquip(false);
     }
 
     private void TargetVeryNear()
@@ -443,8 +471,10 @@ public class RumAIHuman : MonoBehaviour
         {
             SetRunFootAnimations();
             SetRunHandsAnimations();
-            //RunToTargetAndEquip(true, false);
+            HitAndEquip(false);
         }
+        else
+            HitAndEquip(true);
     }
 
     private void TargetHere()
@@ -459,7 +489,7 @@ public class RumAIHuman : MonoBehaviour
             SetStayHandsAnimations();
 
         StartCoroutine(RotationToTagret());
-
+        HitAndEquip(true);
         runToTarget = false;
     }
 
@@ -469,7 +499,7 @@ public class RumAIHuman : MonoBehaviour
     /*----------------------------------------------------------------------------------------------------------------------------------------------------------------------
     ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-        ****                                                               МЕТОДЫ ПОДДЕРЖКИ
+                                                                           МЕТОДЫ ПОДДЕРЖКИ
                                                         
     ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -489,7 +519,7 @@ public class RumAIHuman : MonoBehaviour
     }
     
 
-    public static float GetPathRemainingDistance(UnityEngine.AI.NavMeshAgent navMeshAgent)
+    private static float GetPathRemainingDistance(UnityEngine.AI.NavMeshAgent navMeshAgent)
     {
         if (navMeshAgent.pathPending ||
             navMeshAgent.pathStatus == UnityEngine.AI.NavMeshPathStatus.PathInvalid ||
@@ -513,13 +543,73 @@ public class RumAIHuman : MonoBehaviour
         _rigBuilder.enabled  = true;
     }
 
-    
+    private static Vector3 DirectionNavMeshPath(UnityEngine.AI.NavMeshAgent navMeshAgent, GameObject self)
+    {
+        if (navMeshAgent.pathPending ||
+            navMeshAgent.pathStatus == UnityEngine.AI.NavMeshPathStatus.PathInvalid ||
+            navMeshAgent.path.corners.Length < 2)
+            return new Vector3(0f,0f,0f);
+        
+        return new Vector3(navMeshAgent.path.corners[1].x - self.transform.position.x, 0, navMeshAgent.path.corners[1].z - self.transform.position.z);
+    }
+
+
+    public float AnglePathLine() //угол между ИИ и путём
+    {
+        Vector3 vector = DirectionNavMeshPath(_navMeshAgent, gameObject);
+        Vector3 self = transform.forward;
+        Vector3 upSelf = transform.up;
+        return Mathf.Atan2(Vector3.Dot(upSelf, Vector3.Cross(vector, self)), Vector3.Dot(vector, self)) * Mathf.Rad2Deg;
+    }
+
+    /*----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+        ****                                                           МЕТОДЫ ЭКИПИРОВКИ
+                                                        
+    ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+
+
+    IEnumerator SwordUnequip()
+    {
+        animationStarted = true;
+
+        if(weaponOn == true)
+            yield return StartCoroutine(SwordEquipUneguip(false));
+
+        animationStarted = false;
+    }
+
+
     IEnumerator SwordEquip()
     {
         animationStarted = true;
 
         if(weaponOn == false)
             yield return StartCoroutine(SwordEquipUneguip(false));
+
+        animationStarted = false;
+    }
+
+    IEnumerator ShieldUnequip()
+    {
+        animationStarted = true;
+
+        if(shieldOn == true)
+            yield return StartCoroutine(ShieldEquipUneguip(false));
+
+        animationStarted = false;
+    }
+
+
+    IEnumerator ShieldEquip()
+    {
+        animationStarted = true;
+
+        if(shieldOn == false)
+            yield return StartCoroutine(ShieldEquipUneguip(false));
 
         animationStarted = false;
     }
@@ -651,6 +741,44 @@ public class RumAIHuman : MonoBehaviour
     ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 
+    private void HitAndEquip(bool totalAttack)//Удар вместе с ногами или только руками
+    {
+        if(weaponOn == false)
+            StartCoroutine(SwordEquip());
+
+        if(isAttack == false)
+            StartCoroutine(Hit(totalAttack));
+    }
+
+    IEnumerator Hit(bool totalAttack)
+    {
+        isAttack = true;
+
+        StartCoroutine(RotationToTagret());
+
+        if(totalAttack == true)
+            SetHitAnimations();
+        else
+            SetHitHandsAnimations();
+
+        yield return new WaitForSeconds(0.1f);
+        _entityAttack.AttackStartCollider();
+        yield return new WaitForSeconds(0.3f);
+        
+        _animator.SetInteger("AttackSelect", 0);
+
+        yield return new WaitForSeconds(0.2f);
+        _entityAttack.AttackFinishCollider();
+
+        float attackTime = Random.Range(0.75f,1.25f)*attackSpeed; // ожидание между атаками и доворот в ожидании
+        for(int i = 0; i < 5;i++)
+        {
+            StartCoroutine(RotationToTagret());
+            yield return new WaitForSeconds(attackTime/5);
+        }
+
+        isAttack = false;
+    }
 
 
     public void TargetDisable()
@@ -776,7 +904,7 @@ public class RumAIHuman : MonoBehaviour
         {
             transform.LookAt(new Vector3(target.transform.position.x, transform.position.y ,target.transform.position.z));
         }
-
+        
         Vector3 targetDirection;
         int step = 0;
         int limit = 480;
@@ -839,6 +967,65 @@ public class RumAIHuman : MonoBehaviour
         stay = false;
     }
 
+    IEnumerator PatrolRotateToPath()
+    {
+        if(rotationPatrolFlag == true)
+            yield break;
+
+        rotationPatrolFlag = true;
+        SetStayAnimations();
+        float ang = AnglePathLine();
+
+        Vector3 targetDirection;
+        int step = 0;
+        int limit = 480;
+
+        _animator.ResetTrigger("ExitRotationFoots");
+
+        if(ang<0)
+        {
+            SetLeftTurn();
+
+            while(-8 > AnglePathLine()) // доворот по пути
+            {
+                targetDirection = DirectionNavMeshPath(_navMeshAgent, gameObject);
+                Vector3 newDirection = Vector3.RotateTowards(transform.forward, targetDirection, Time.deltaTime*0.7f, 0.0f);
+                transform.rotation = Quaternion.LookRotation(newDirection);  
+                yield return null;
+
+                step++;
+                if(step>limit)
+                {
+                    break;
+                }
+            }
+        }
+
+        else
+        {
+            SetRightTurn();
+
+            while(8 < AnglePathLine()) // доворот по пути
+            {
+                targetDirection = DirectionNavMeshPath(_navMeshAgent, gameObject);
+                Vector3 newDirection = Vector3.RotateTowards(transform.forward, targetDirection, Time.deltaTime*0.7f, 0.0f);
+                transform.rotation = Quaternion.LookRotation(newDirection);  
+                yield return null;
+
+                step++;
+                if(step>limit)
+                {
+                    break;
+                }
+            }
+        }
+        yield return null;
+        
+        _animator.SetTrigger("ExitRotationFoots");
+        rotationPatrolFlag = false;
+    }
+    
+
 
     /*----------------------------------------------------------------------------------------------------------------------------------------------------------------------
     ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -885,6 +1072,30 @@ public class RumAIHuman : MonoBehaviour
     }
 
     //Анимации всего тела
+    void SetLeftTurn()
+    {
+        _animator.SetTrigger("ToRRotationFoots");
+        _animator.ResetTrigger("ToIdleFoots");
+        _animator.ResetTrigger("ToRunFoots");
+        _animator.ResetTrigger("ToWalkFoots");
+
+        _animator.ResetTrigger("ToWalkHands");
+        _animator.ResetTrigger("ToRunHands");
+        _animator.SetTrigger("ToIdleHands");
+    }
+    void SetRightTurn()
+    {
+        _animator.SetTrigger("ToLRotationFoots");
+        _animator.ResetTrigger("ToIdleFoots");
+        _animator.ResetTrigger("ToRunFoots");
+        _animator.ResetTrigger("ToWalkFoots");
+
+        _animator.ResetTrigger("ToWalkHands");
+        _animator.ResetTrigger("ToRunHands");
+        _animator.SetTrigger("ToIdleHands");
+    }
+
+
     void SetStayAnimations()
     {
         _animator.SetTrigger("ToIdleFoots");
@@ -920,8 +1131,22 @@ public class RumAIHuman : MonoBehaviour
         _animator.ResetTrigger("ToIdleHands");
     }
 
+    void SetHitAnimations()
+    {
+        _animator.SetInteger("AttackSelect", Random.Range(1,7));
+        _animator.SetTrigger("ReadyAttackFoot");
+        _animator.SetTrigger("AttackHands");
+    }
+
 
     //Анимации рук
+
+    void SetHitHandsAnimations()
+    {
+        _animator.SetInteger("AttackSelect", Random.Range(1,7));
+        _animator.SetTrigger("AttackHands");
+    }
+
     void SetStayHandsAnimations()
     {
         _animator.ResetTrigger("ToWalkHands");
