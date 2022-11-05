@@ -19,7 +19,7 @@ public class RumAIHuman : MonoBehaviour
     private float y_OffsetTaget;
     [HideInInspector] public int stoppedAI; //0-не стоит 1 - стоит перед игроком
     [Tooltip("Вероятность ожидания противника в бою, ИИ сам не подходит близко")]
-     [Range(0f, 1f)]
+     [Range(0, 100)]
     public int waitTargetChance = 20;
     private RigBuilder _rigBuilder;
     private float walkSpeed = 1f;
@@ -44,9 +44,6 @@ public class RumAIHuman : MonoBehaviour
     public float minStayTime = 1f;
     public float maxStayTime = 5f;
     private int numberOfPatrolPoint = 0;
-    [Tooltip("Шанс того, что ИИ всегда будет со щитом")]
-    [Range(0, 100)]
-    public float chanceUnequipShield = 0;
     [Tooltip("Шанс того, что ИИ остановится на точке")]
     [Range(0f, 1f)]
     public float probabilityStayOnTarget = 0;
@@ -61,6 +58,7 @@ public class RumAIHuman : MonoBehaviour
     private float straightDistanceToTarget;
     [SerializeField] private float lookDistance;
     [SerializeField] private float swordUnequipDistance;
+    [SerializeField] private float bowEquipDistance;
     [SerializeField] private float attackDistance;
     [SerializeField] private float attackStayDistance;
     private float attackDistanceFinal;
@@ -78,6 +76,12 @@ public class RumAIHuman : MonoBehaviour
     public GameObject attackSword;
     public GameObject stayShield;
     public GameObject attackShield;
+    public GameObject stayBow;
+    public GameObject attackBow;
+    private bool haveSword;
+    private bool haveSheild;
+    private bool haveBow;
+    private Animator _bowAnimator;
     private PlayerStats _playerStats;
     private EntityAttack _entityAttack;
     private EntityStats _entityStats;
@@ -88,6 +92,7 @@ public class RumAIHuman : MonoBehaviour
 
     private bool weaponOn = false;
     private bool shieldOn = false;
+    private bool bowOn = false;
     private bool isAttack = false; //атака или ожидание
 
     private bool animationStarted = false; // есть анимация оружия или щита
@@ -97,6 +102,10 @@ public class RumAIHuman : MonoBehaviour
     private bool starting = false; //ИИ инициализирован
     private bool runToTarget = false;//подбежит к цели при удалении в битве
     private bool speedFlag = false;//скорость меняется
+
+    private IEnumerator targetNoAccessCoroutine;
+    public bool targetNoAccessFlag = false;//скорость меняется
+    public bool targetNoAccessIEFlag = false;//скорость меняется
 
     private int random = 0;
     private int randomCostant = 0;
@@ -121,11 +130,18 @@ public class RumAIHuman : MonoBehaviour
         _playerStats = player.GetComponent<PlayerStats>();
         _navMeshAgent = gameObject.GetComponent<UnityEngine.AI.NavMeshAgent>();
         _animator = gameObject.GetComponent<Animator>();
+        _bowAnimator = attackBow.GetComponent<Animator>();
         
         _rigBuilder = gameObject.GetComponent<RigBuilder>();
         _rigBuilder.enabled  = false;
             hadTargetStartPosition = hadLookTarget.transform.localPosition;
             bodyTargetStartPosition = bodyLookTarget.transform.localPosition;
+
+        _entityAttack.damage = damage;
+        _entityStats.AngryGroup = angryGroup;
+        _entityStats.Group = group;
+        _entityAttack.StatsScript = _entityStats;
+        _entityAttack.Player_Stats = _playerStats;
 
         //------------------------------------ИНИЦИАЛИЗАЦИЯ РАНДОМАЙЗЕРОВ-----------------------------
         randomCostant = Random.Range(1,100);
@@ -133,20 +149,33 @@ public class RumAIHuman : MonoBehaviour
 
 
         //------------------------------------ИНИЦИАЛИЗАЦИЯ ЭКИПИРОВКИ-----------------------------
-        if(staySword != null)
-        staySword.SetActive (true);
-        if(attackSword != null)
-        attackSword.SetActive (false);
 
-        if(stayShield != null)
-        stayShield.SetActive (true);
-        if(attackShield != null)
-        attackShield.SetActive (false);
+        if(staySword != null && attackSword != null)
+        {
+            staySword.SetActive (true);
+            attackSword.SetActive (false);
+            haveSword = true;
+        }
+        else
+            haveSword = false;
 
+        if(stayBow != null && attackBow != null)
+        {
+            stayBow.SetActive (true);
+            attackBow.SetActive (false);
+            haveBow = true;
+        }
+        else
+            haveBow = false;
         
-        
-        if(randomCostant < chanceUnequipShield)
-            StartCoroutine(ShieldEquip());
+        if(stayShield != null && attackShield != null)
+        {
+            stayShield.SetActive (true);
+            attackShield.SetActive (false);
+            haveSheild = true;
+        }
+        else
+            haveSheild = false;
     }
 
     IEnumerator Cyclic ()
@@ -170,9 +199,25 @@ public class RumAIHuman : MonoBehaviour
     void Update()
     {
         // Debug.DrawLine(gameObject.transform.position, gameObject.transform.position+DirectionNavMeshPath(_navMeshAgent, gameObject), Color.red, 2.5f, false);
+        if(Input.GetKeyDown("u"))
+            {
+                if(animationStarted == false)
+                    StartCoroutine(AllUnequip(true));
+            }
         if(Input.GetKeyDown("y"))
             {
-                Debug.Log(AnglePathLine());
+                if(animationStarted == false)
+                    StartCoroutine(AllEquip(true));
+            }
+        if(Input.GetKeyDown("j"))
+            {
+                if(animationStarted == false)
+                    StartCoroutine(BowUnequip(true));
+            }
+        if(Input.GetKeyDown("h"))
+            {
+                if(animationStarted == false)
+                    StartCoroutine(BowEquip(true));
             }
 
 
@@ -219,11 +264,8 @@ public class RumAIHuman : MonoBehaviour
 
     void Patrol()
     {   
-        //Убирание меча и возможно щита для партуля
-        if(randomCostant > chanceUnequipShield)
-            StartCoroutine(AllUnequip());
-        else
-            StartCoroutine(SwordUnequip());
+        if(animationStarted == false)
+            StartCoroutine(AllUnequip(true));
 
         //Поворот головы к игроку при приблежении
         if(stoppedFrontPlayer == true)  
@@ -342,10 +384,21 @@ public class RumAIHuman : MonoBehaviour
             return;
         }
 
-        //Цель недоступна, но видна
+        //Цель недоступна
         if(navDistanceToTarget== -1)
         {
-            TargetNoAccess();
+            TargetNoAccess(directVisible);
+        }
+        else
+        {
+            if(targetNoAccessCoroutine != null)
+            {
+                StopCoroutine(targetNoAccessCoroutine);
+                targetNoAccessCoroutine = null;
+            }
+
+            targetNoAccessFlag = false;
+            targetNoAccessIEFlag = false;
         }
 
         //Цель в пределах видимости и до доставания оружия и есть прямой зрительный контакт
@@ -355,13 +408,13 @@ public class RumAIHuman : MonoBehaviour
         }
 
         //Цель достаточно близко, чтобы достать оружие, но не достаточно близко, чтобы бить
-        if(navDistanceToTarget <= swordUnequipDistance && navDistanceToTarget >= attackStayDistanceFinal)
+        if(navDistanceToTarget <= swordUnequipDistance && navDistanceToTarget >= bowEquipDistance)
         {
             TargetMiddle();
         }
 
         //Цель ближе, можно перевести дух
-        if(navDistanceToTarget < attackDistanceFinal*2.5f && navDistanceToTarget > attackStayDistanceFinal*1.7f && attackTarget == false)
+        if(navDistanceToTarget < bowEquipDistance && navDistanceToTarget > attackStayDistanceFinal*1.7f && attackTarget == false)
         {
             TargetVeryMiddle();
         }
@@ -379,7 +432,7 @@ public class RumAIHuman : MonoBehaviour
         }   
 
         //Ближе нельзя
-        if(navDistanceToTarget < attackStayDistanceFinal)
+        if(navDistanceToTarget < attackStayDistanceFinal && navDistanceToTarget > 0)
         {
             TargetHere();
         }
@@ -397,22 +450,47 @@ public class RumAIHuman : MonoBehaviour
 
 
 
-    private void TargetNoAccess()
+    private void TargetNoAccess(bool visible)
     {
-        _navMeshAgent.SetDestination(targetPosition);
-        
+        SetStayAnimations();
+        if(targetNoAccessFlag == false)
+        {
+            if(targetNoAccessIEFlag == false)
+            {
+                targetNoAccessCoroutine = TargetNoAccessWait();
+                StartCoroutine(targetNoAccessCoroutine);
+            }
+        }
+            
+        else
+        {
+            _navMeshAgent.SetDestination(targetPosition);
+            if(visible==true && animationStarted == false && bowOn == false)
+                StartCoroutine(BowEquip(true));
+        }
+    }
+    IEnumerator TargetNoAccessWait()
+    {
+        targetNoAccessIEFlag = true;
+        yield return new WaitForSeconds(1.5f);
+        targetNoAccessFlag = true;
     }
 
     private void TargetFar()
     {
+        
         _navMeshAgent.SetDestination(targetPosition);
+        if(bowOn == true)
+        {
+            return;///////////////////////////////////////////////////////////////////////////////////////
+        }
 
         SetRunFootAnimations();
 
         if(animationStarted == false)   //Анимация рук при отсутствии оных
         {
             if(randomCostant > 50 && weaponOn == true)
-                StartCoroutine(SwordEquip());
+                StartCoroutine(SwordEquip(true));
             else
                 SetRunHandsAnimations();
         }
@@ -422,6 +500,11 @@ public class RumAIHuman : MonoBehaviour
     {
         _navMeshAgent.SetDestination(targetPosition);
 
+        if(bowOn == true)
+        {
+            return;///////////////////////////////////////////////////////////////////////////////////////
+        }
+
         SetRunFootAnimations();
 
         if(animationStarted == false)   //Анимация рук при отсутствии оных
@@ -429,7 +512,7 @@ public class RumAIHuman : MonoBehaviour
             if(weaponOn == true && shieldOn == true)
                 SetRunHandsAnimations();
             else
-                StartCoroutine(AllEquip());
+                StartCoroutine(AllEquip(true));
         }
     }
     
@@ -440,6 +523,7 @@ public class RumAIHuman : MonoBehaviour
 
         if(animationStarted == false)   //Анимация рук при отсутствии оных
         {
+            StartCoroutine(SwordEquip(true));
             SetRunHandsAnimations();
 
             if(random < waitTargetChance)
@@ -460,7 +544,9 @@ public class RumAIHuman : MonoBehaviour
         runToTarget = true;
         SetRunFootAnimations();
         SetRunHandsAnimations();
-        HitAndEquip(false);
+
+        if(animationStarted == false)
+            HitAndEquip(false);
     }
 
     private void TargetVeryNear()
@@ -474,7 +560,8 @@ public class RumAIHuman : MonoBehaviour
             HitAndEquip(false);
         }
         else
-            HitAndEquip(true);
+            if(animationStarted == false)
+                HitAndEquip(true);
     }
 
     private void TargetHere()
@@ -489,7 +576,8 @@ public class RumAIHuman : MonoBehaviour
             SetStayHandsAnimations();
 
         StartCoroutine(RotationToTagret());
-        HitAndEquip(true);
+        if(animationStarted == false)
+            HitAndEquip(true);
         runToTarget = false;
     }
 
@@ -562,6 +650,21 @@ public class RumAIHuman : MonoBehaviour
         return Mathf.Atan2(Vector3.Dot(upSelf, Vector3.Cross(vector, self)), Vector3.Dot(vector, self)) * Mathf.Rad2Deg;
     }
 
+
+    public void Die()
+    {
+        _navMeshAgent.SetDestination(transform.position);
+        _rigBuilder.enabled = false;
+
+        if(attackSword.activeSelf == true)
+        {
+            attackSword.GetComponent<BoxCollider>().enabled = true;
+            attackSword.GetComponent<Rigidbody>().useGravity = true;
+            attackSword.GetComponent<EntityAttack>().enabled = false;
+        }
+    }
+
+
     /*----------------------------------------------------------------------------------------------------------------------------------------------------------------------
     ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -570,53 +673,89 @@ public class RumAIHuman : MonoBehaviour
     ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-
-
-    IEnumerator SwordUnequip()
+    IEnumerator BowEquip(bool selfAnimationBlock)
     {
-        animationStarted = true;
+        if(selfAnimationBlock == true)
+            animationStarted = true;
+
+        if(bowOn == false)
+        {
+            yield return StartCoroutine(AllUnequip(false));
+            yield return StartCoroutine(BowEquipUnequip(false));
+        }
+
+        if(selfAnimationBlock == true)
+            animationStarted = false;
+    }
+
+    IEnumerator BowUnequip(bool selfAnimationBlock)
+    {
+        if(selfAnimationBlock == true)
+            animationStarted = true;
+
+        if(bowOn == true)
+        {
+            yield return StartCoroutine(BowEquipUnequip(false));
+        }
+
+        if(selfAnimationBlock == true)
+            animationStarted = false;
+    }
+
+    IEnumerator SwordUnequip(bool selfAnimationBlock)
+    {
+        if(selfAnimationBlock == true)
+            animationStarted = true;
 
         if(weaponOn == true)
             yield return StartCoroutine(SwordEquipUneguip(false));
 
-        animationStarted = false;
+        if(selfAnimationBlock == true)
+            animationStarted = false;
     }
 
 
-    IEnumerator SwordEquip()
+    IEnumerator SwordEquip(bool selfAnimationBlock)
     {
-        animationStarted = true;
+        if(selfAnimationBlock == true)
+            animationStarted = true;
 
         if(weaponOn == false)
             yield return StartCoroutine(SwordEquipUneguip(false));
 
-        animationStarted = false;
+        if(selfAnimationBlock == true)
+            animationStarted = false;
     }
 
-    IEnumerator ShieldUnequip()
+    IEnumerator ShieldUnequip(bool selfAnimationBlock)
     {
-        animationStarted = true;
-
+        if(selfAnimationBlock == true)
+            animationStarted = true;
+        
         if(shieldOn == true)
             yield return StartCoroutine(ShieldEquipUneguip(false));
 
-        animationStarted = false;
+        if(selfAnimationBlock == true)
+            animationStarted = false;
     }
 
 
-    IEnumerator ShieldEquip()
+    IEnumerator ShieldEquip(bool selfAnimationBlock)
     {
-        animationStarted = true;
+        if(selfAnimationBlock == true)
+            animationStarted = true;
 
         if(shieldOn == false)
             yield return StartCoroutine(ShieldEquipUneguip(false));
 
-        animationStarted = false;
+        if(selfAnimationBlock == true)
+            animationStarted = false;
     }
 
-    IEnumerator AllEquip()
+    IEnumerator AllEquip(bool selfAnimationBlock)
     {
-        animationStarted = true;
+        if(selfAnimationBlock == true)
+            animationStarted = true;
 
         if(shieldOn == false)
             yield return StartCoroutine(ShieldEquipUneguip(false));
@@ -625,27 +764,95 @@ public class RumAIHuman : MonoBehaviour
             yield return StartCoroutine(SwordEquipUneguip(false));
         
         yield return null;
-        animationStarted = false;    
+
+        if(selfAnimationBlock == true)
+            animationStarted = false;    
     }
 
-    IEnumerator AllUnequip()
+    IEnumerator AllUnequip(bool selfAnimationBlock)
     {
-        animationStarted = true;
+        if(selfAnimationBlock == true)
+            animationStarted = true;
 
         if(shieldOn == true)
+        {
             yield return StartCoroutine(ShieldEquipUneguip(false));
+        }
 
         if(weaponOn == true)
+        {
             yield return StartCoroutine(SwordEquipUneguip(false));
+        }
         
         yield return null;
-        animationStarted = false;    
+
+        if(selfAnimationBlock == true)
+            animationStarted = false;    
+    }
+
+    IEnumerator BowEquipUnequip(bool selfAnimationBlock)
+    {
+        if(selfAnimationBlock == true)
+            animationStarted = true;
+
+        if(haveBow == false)
+            yield break;
+
+        yield return new WaitForSeconds(0.2f);
+
+        if(bowOn == false)
+        {
+            _animator.SetTrigger("BowEquip");   
+            bowOn = true;
+        }
+           
+
+        else
+        {
+            Debug.Log("Деикип "+navDistanceToTarget);
+            _animator.SetTrigger("BowUnequip");
+            bowOn = false;
+        }
+
+
+        yield return new WaitForSeconds(0.1f);
+
+        if(bowOn == true)
+        {
+            if(stayBow != null)
+                stayBow.SetActive (false);
+            if(attackBow != null)
+                attackBow.SetActive (true);
+            bowOn = true;
+        }
+        else
+        {
+            if(stayBow != null)
+                stayBow.SetActive (true);
+            if(attackBow != null)
+                attackBow.SetActive (false);
+            bowOn = false;
+        }
+
+        yield return new WaitForSeconds(0.4f);
+        _bowAnimator.SetTrigger("Charging");
+         yield return new WaitForSeconds(0.2f);
+
+
+        if(selfAnimationBlock == true)
+            animationStarted = false;
     }
 
     IEnumerator ShieldEquipUneguip (bool selfAnimationBlock) //параметр - использовать свою блокировку анимаций или нет (AllEquip, как пример)
     {
         if(selfAnimationBlock == true)
             animationStarted = true;
+
+        if(haveSheild == false)
+            yield break;
+
+        if(bowOn == true)
+            yield return StartCoroutine(BowEquipUnequip(false));
 
         yield return new WaitForSeconds(0.2f);
 
@@ -691,6 +898,12 @@ public class RumAIHuman : MonoBehaviour
     {
         if(selfAnimationBlock == true)
             animationStarted = true;
+
+        if(haveSword == false)
+            yield break;
+
+        if(bowOn == true)
+            yield return StartCoroutine(BowEquipUnequip(false));
 
         yield return new WaitForSeconds(0.2f);
 
@@ -740,11 +953,18 @@ public class RumAIHuman : MonoBehaviour
     ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
+    IEnumerator BowShoot()
+    {
+        yield break;
+    }
 
     private void HitAndEquip(bool totalAttack)//Удар вместе с ногами или только руками
     {
         if(weaponOn == false)
-            StartCoroutine(SwordEquip());
+        {
+            StartCoroutine(SwordEquip(true));
+            return;
+        }
 
         if(isAttack == false)
             StartCoroutine(Hit(totalAttack));
@@ -881,9 +1101,9 @@ public class RumAIHuman : MonoBehaviour
             if(hitColliders[i].GetComponent<EntityStats>())
             {
                 if(hitColliders[i].GetComponent<EntityStats>().die == false)
-                if(hitColliders[i].GetComponent<SimpleAI>())
+                if(hitColliders[i].GetComponent<RumAIHuman>())
                 {
-                    SimpleAI potentialTarget = hitColliders[i].GetComponent<SimpleAI>();
+                    RumAIHuman potentialTarget = hitColliders[i].GetComponent<RumAIHuman>();
                     for(int j = 0; j< angryGroup.Count;j++)
                     {
                         if(angryGroup[j] == potentialTarget.group)
@@ -921,7 +1141,7 @@ public class RumAIHuman : MonoBehaviour
             }  
             yield return null;
             step++;
-            if(step>limit)
+            if(step>limit || target == null)
                 {
                     break;
                 }

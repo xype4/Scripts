@@ -66,10 +66,10 @@ public class EntityStats : MonoBehaviour
             GetComponent<NavMeshAgent>().speed = 0;
             GetComponent<BoxCollider>().isTrigger = true;
             GetComponent<Animator>().enabled = false;
-            if(GetComponent<SimpleAI>()) 
+            if(GetComponent<RumAIHuman>()) 
             {
-                GetComponent<SimpleAI>().die();
-                GetComponent<SimpleAI>().enabled = false;
+                GetComponent<RumAIHuman>().Die();
+                GetComponent<RumAIHuman>().enabled = false;
             }
             if(GetComponent<AnimalAI>()) 
             {
@@ -97,9 +97,6 @@ public class EntityStats : MonoBehaviour
 
     public void InputDamage(int finalBleendingDamage,int finalBleendingTime,int finalPoisonDamage,int finalPoisonTime,float Damage,float PoisonOilDamage,float magicDamage, bool player)
     {
-        Debug.Log(Damage+" "+PoisonOilDamage);
-        //Debug.Log("Кровь урон" + finalBleendingDamage + " время" + finalBleendingTime);
-
         if(player && gameObject.GetComponent<SimpleAI>())
         {
             gameObject.GetComponent<SimpleAI>().target = gameObject.GetComponent<SimpleAI>().player;
