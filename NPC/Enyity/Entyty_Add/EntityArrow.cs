@@ -4,21 +4,21 @@ using UnityEngine;
 
 public class EntityArrow : MonoBehaviour
 {
-    public bool fly = false;
-    public float Damage;
-    public float Speed = 5;
-    public List<int> AngryGroup;
-    public PlayerStats PlayerHP;
+    private bool fly = false;
+    private float Damage;
+    private float Speed = 5;
+    private List<int> AngryGroup;
+    private PlayerStats _playerStats;
+    public int id;
     
     void Start()
     {
         Destroy(gameObject,60);
     }
-    public void SetID(int id, float damage, PlayerStats PH, List<int> angryGroup)
+    public void Initialization(float damage, PlayerStats playerStats, List<int> angryGroup)
     {
-        gameObject.GetComponent<Item>().id = id;
-        PlayerHP = PH;
-        Speed = 2.5f;
+        _playerStats = playerStats;
+        Speed = 3f;
         Damage = damage;
         AngryGroup = angryGroup;
         fly = true;
@@ -38,7 +38,7 @@ public class EntityArrow : MonoBehaviour
         {
             if (col.tag == "PlayerBody")
             {
-                PlayerHP.Damage(Damage);
+                _playerStats.Damage(Damage);
                 Destroy(gameObject,0);
                 return;
             } 

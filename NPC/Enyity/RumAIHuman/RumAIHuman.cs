@@ -19,7 +19,7 @@ public class RumAIHuman : MonoBehaviour
     private float y_OffsetTaget;
     [HideInInspector] public int stoppedAI; //0-не стоит 1 - стоит перед игроком
     [Tooltip("Вероятность ожидания противника в бою, ИИ сам не подходит близко")]
-     [Range(0, 100)]
+    [Range(0, 100)]
     public int waitTargetChance = 20;
     private RigBuilder _rigBuilder;
     private float walkSpeed = 1f;
@@ -40,8 +40,10 @@ public class RumAIHuman : MonoBehaviour
 
     private bool stay = false; //Ожидание на точке
     private bool walkToPoint = false; //Идёт ли к точке
-
+    
+    [Range(0f, 600f)]
     public float minStayTime = 1f;
+    [Range(0f, 600f)]
     public float maxStayTime = 5f;
     private int numberOfPatrolPoint = 0;
     [Tooltip("Шанс того, что ИИ остановится на точке")]
@@ -54,7 +56,7 @@ public class RumAIHuman : MonoBehaviour
     [Space]
     [Header("Настройки видимости")]
 
-    private float navDistanceToTarget;
+    [SerializeField]private float navDistanceToTarget;
     private float straightDistanceToTarget;
     [SerializeField] private float lookDistance;
     [SerializeField] private float swordUnequipDistance;
@@ -78,6 +80,13 @@ public class RumAIHuman : MonoBehaviour
     public GameObject attackShield;
     public GameObject stayBow;
     public GameObject attackBow;
+    public GameObject flyArrow;
+    public GameObject arrowOnBow;
+    public GameObject arrowInHand;
+    [Range(0f, 10f)]
+    public float bowAttackMinSpeed = 1f;
+    [Range(0f, 10f)]
+    public float bowAttackMaxSpeed = 5f;
     private bool haveSword;
     private bool haveSheild;
     private bool haveBow;
@@ -88,6 +97,7 @@ public class RumAIHuman : MonoBehaviour
 
     public float attackSpeed;
     public float damage;
+    public float bowDamage;
     private EntityStats entityStatsScript;
 
     private bool weaponOn = false;
@@ -95,13 +105,14 @@ public class RumAIHuman : MonoBehaviour
     private bool bowOn = false;
     private bool isAttack = false; //атака или ожидание
 
-    private bool animationStarted = false; // есть анимация оружия или щита
+    public bool animationStarted = false; // есть анимация оружия или щита
     private bool animationPatrol = false; // есть анимация деэкипировки для патруля
     private bool attackTarget = false; //цель свободная для атаки
     private bool waitAttack = false; //ожидание цели для атаки
     private bool starting = false; //ИИ инициализирован
     private bool runToTarget = false;//подбежит к цели при удалении в битве
     private bool speedFlag = false;//скорость меняется
+    public bool directVisible;
 
     private IEnumerator targetNoAccessCoroutine;
     public bool targetNoAccessFlag = false;//скорость меняется
@@ -112,9 +123,9 @@ public class RumAIHuman : MonoBehaviour
 
     TaegetAttack TA;
 
-
     void Start()
     {
+        
         //------------------------------------ИНИЦИАЛИЗАЦИЯ ПАТРУЛЯ--------------------------------
         x_OffsetTaget = Random.Range(-2f,2f);
         y_OffsetTaget = Random.Range(-2f,2f);
@@ -142,6 +153,8 @@ public class RumAIHuman : MonoBehaviour
         _entityStats.Group = group;
         _entityAttack.StatsScript = _entityStats;
         _entityAttack.Player_Stats = _playerStats;
+
+      
 
         //------------------------------------ИНИЦИАЛИЗАЦИЯ РАНДОМАЙЗЕРОВ-----------------------------
         randomCostant = Random.Range(1,100);
@@ -176,6 +189,7 @@ public class RumAIHuman : MonoBehaviour
         }
         else
             haveSheild = false;
+
     }
 
     IEnumerator Cyclic ()
@@ -232,7 +246,7 @@ public class RumAIHuman : MonoBehaviour
             return;
 
             case 1:
-                FriendlyOne();
+                FriendlyOne();   
                 Attack();
             return;
 
@@ -271,7 +285,7 @@ public class RumAIHuman : MonoBehaviour
         if(stoppedFrontPlayer == true)  
         {
             stoppedFrontPlayerFlag = true;
-            LookOnPlayer(hadLookTarget, bodyLookTarget, player, _rigBuilder, 1f);
+            LookOnPlayer(hadLookTarget, bodyLookTarget, player, _rigBuilder, 1f, bodyTargetStartPosition);
             SetStayAnimations();
             return;
         }
@@ -284,10 +298,17 @@ public class RumAIHuman : MonoBehaviour
             }
         }
 
-        
+        if(patrolPoints.Count == 0)
+        {
+            SetStayAnimations();
+            return;
+        }
+
         //Движение к точке
         if(stay == true|| rotationPatrolFlag == true)
             return;
+
+        
 
         SetWalkAnimations();
         
@@ -371,8 +392,8 @@ public class RumAIHuman : MonoBehaviour
             TargetDieCheck();            
         }
 
-        bool directVisible = DirectVisibleCheck(target, gameObject.transform.position);
-
+        directVisible = DirectVisibleCheck(target, gameObject.transform.position);
+        
 
 
         //Обработка по расстоянию до цели
@@ -387,7 +408,7 @@ public class RumAIHuman : MonoBehaviour
         //Цель недоступна
         if(navDistanceToTarget== -1)
         {
-            TargetNoAccess(directVisible);
+            TargetNoAccess();
         }
         else
         {
@@ -450,7 +471,7 @@ public class RumAIHuman : MonoBehaviour
 
 
 
-    private void TargetNoAccess(bool visible)
+    private void TargetNoAccess()
     {
         SetStayAnimations();
         if(targetNoAccessFlag == false)
@@ -461,12 +482,18 @@ public class RumAIHuman : MonoBehaviour
                 StartCoroutine(targetNoAccessCoroutine);
             }
         }
-            
         else
         {
             _navMeshAgent.SetDestination(targetPosition);
-            if(visible==true && animationStarted == false && bowOn == false)
-                StartCoroutine(BowEquip(true));
+            if(directVisible==true && animationStarted == false)
+            {
+                if(bowOn == false)
+                    StartCoroutine(BowEquip(true));
+                else
+                {
+                    StartCoroutine(BowShoot());
+                }
+            }
         }
     }
     IEnumerator TargetNoAccessWait()
@@ -478,11 +505,13 @@ public class RumAIHuman : MonoBehaviour
 
     private void TargetFar()
     {
-        
+        /////////////////////////////////////////////////////////////////////////////////////ДОБАВИТЬ ВЕРОЯТНОСТЬ ПОДНЯТИЯ ЛУКА
         _navMeshAgent.SetDestination(targetPosition);
-        if(bowOn == true)
+        if(bowOn == true && directVisible==true && animationStarted == false)
         {
-            return;///////////////////////////////////////////////////////////////////////////////////////
+            SetIdleFootAnimations();
+            StartCoroutine(BowShoot());
+            return;
         }
 
         SetRunFootAnimations();
@@ -500,9 +529,10 @@ public class RumAIHuman : MonoBehaviour
     {
         _navMeshAgent.SetDestination(targetPosition);
 
-        if(bowOn == true)
+        if(bowOn == true && directVisible==true && animationStarted == false)
         {
-            return;///////////////////////////////////////////////////////////////////////////////////////
+            StartCoroutine(BowShoot());
+            return;
         }
 
         SetRunFootAnimations();
@@ -575,7 +605,6 @@ public class RumAIHuman : MonoBehaviour
         else
             SetStayHandsAnimations();
 
-        StartCoroutine(RotationToTagret());
         if(animationStarted == false)
             HitAndEquip(true);
         runToTarget = false;
@@ -620,13 +649,47 @@ public class RumAIHuman : MonoBehaviour
             distance += Vector3.Distance(navMeshAgent.path.corners[i], navMeshAgent.path.corners[i + 1]);
         }
 
+        if(distance == 0)
+            return -1f;
+
         return distance;
     }
 
-    public static void LookOnPlayer(GameObject hadLookTarget, GameObject bodyLookTarget, GameObject player, RigBuilder _rigBuilder, float speed)
+    public static void LookOnPlayer(GameObject hadLookTarget, GameObject bodyLookTarget, GameObject player, RigBuilder _rigBuilder, float speed, Vector3 bodyTargetStartPosition)
+    {
+        hadLookTarget.transform.position = Vector3.MoveTowards(hadLookTarget.transform.position, player.transform.GetChild(0).position, Time.deltaTime * speed);
+        while(bodyLookTarget.transform.localPosition != bodyTargetStartPosition)
+        {
+            bodyLookTarget.transform.localPosition = Vector3.MoveTowards(bodyLookTarget.transform.localPosition, bodyTargetStartPosition, Time.deltaTime * 20f);
+        }
+        //bodyLookTarget.transform.position = Vector3.MoveTowards(bodyLookTarget.transform.position, player.transform.position+ new Vector3(0,0.3f,0), Time.deltaTime * speed);
+
+        _rigBuilder.enabled  = true;
+    }
+
+    public void LookOnPlayerWithBow(float speed)
     {
         hadLookTarget.transform.position = Vector3.MoveTowards(hadLookTarget.transform.position, player.transform.GetChild(0).position, Time.deltaTime * speed);
         bodyLookTarget.transform.position = Vector3.MoveTowards(bodyLookTarget.transform.position, player.transform.position+ new Vector3(0,0.3f,0), Time.deltaTime * speed);
+
+        if(10<Vector3.Angle(new Vector3(player.transform.position.x - transform.position.x, 0, player.transform.position.z - transform.position.z), transform.forward))
+        {
+           
+            StartCoroutine(RotationToTagret(5,1));
+           
+        }
+
+        _rigBuilder.enabled  = true;
+    }
+
+    public static void LookOnOtherTarget(GameObject hadLookTarget, GameObject bodyLookTarget, GameObject target, RigBuilder _rigBuilder, Vector3 bodyTargetStartPosition)
+    {
+        hadLookTarget.transform.position = Vector3.MoveTowards(hadLookTarget.transform.position, target.transform.position+ new Vector3(0,1,0), Time.deltaTime * 50);
+        while(bodyLookTarget.transform.localPosition != bodyTargetStartPosition)
+        {
+            bodyLookTarget.transform.localPosition = Vector3.MoveTowards(bodyLookTarget.transform.localPosition, bodyTargetStartPosition, Time.deltaTime * 20f);
+        }
+        //bodyLookTarget.transform.position = Vector3.MoveTowards(bodyLookTarget.transform.position, target.transform.position, Time.deltaTime * 50);
 
         _rigBuilder.enabled  = true;
     }
@@ -809,7 +872,7 @@ public class RumAIHuman : MonoBehaviour
 
         else
         {
-            Debug.Log("Деикип "+navDistanceToTarget);
+            //Debug.Log("Деикип "+navDistanceToTarget);
             _animator.SetTrigger("BowUnequip");
             bowOn = false;
         }
@@ -824,6 +887,8 @@ public class RumAIHuman : MonoBehaviour
             if(attackBow != null)
                 attackBow.SetActive (true);
             bowOn = true;
+            yield return new WaitForSeconds(0.4f);
+            _bowAnimator.SetTrigger("Charging");
         }
         else
         {
@@ -832,10 +897,11 @@ public class RumAIHuman : MonoBehaviour
             if(attackBow != null)
                 attackBow.SetActive (false);
             bowOn = false;
+             yield return new WaitForSeconds(0.4f);
+            _bowAnimator.SetTrigger("Fire");
         }
 
-        yield return new WaitForSeconds(0.4f);
-        _bowAnimator.SetTrigger("Charging");
+        
          yield return new WaitForSeconds(0.2f);
 
 
@@ -953,9 +1019,36 @@ public class RumAIHuman : MonoBehaviour
     ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     ----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
+    
     IEnumerator BowShoot()
     {
-        yield break;
+        animationStarted = true;
+        if(!_bowAnimator.GetCurrentAnimatorStateInfo(0).IsName("Armature|Run"))
+        {
+            _bowAnimator.SetTrigger("Charging");
+            yield return null;
+        }
+        _bowAnimator.ResetTrigger("Charging");
+        _bowAnimator.SetTrigger("Fire");
+        _animator.SetTrigger("BowFire");
+
+        arrowOnBow.SetActive(false);
+        GameObject arrow = Instantiate(flyArrow, arrowOnBow.transform.position, arrowOnBow.transform.rotation);
+
+        arrow.GetComponent<EntityArrow>().Initialization(bowDamage, _playerStats, angryGroup);
+
+        arrow.transform.LookAt(target.gameObject.transform);
+
+        yield return new WaitForSeconds(0.7f);
+        arrowInHand.SetActive(true);
+        yield return new WaitForSeconds(0.8f);
+
+        _bowAnimator.SetTrigger("Charging");
+        arrowOnBow.SetActive(true);
+        arrowInHand.SetActive(false);
+
+        yield return new WaitForSeconds(4f+Random.Range(1f,5f));
+        animationStarted = false;
     }
 
     private void HitAndEquip(bool totalAttack)//Удар вместе с ногами или только руками
@@ -974,7 +1067,7 @@ public class RumAIHuman : MonoBehaviour
     {
         isAttack = true;
 
-        StartCoroutine(RotationToTagret());
+        yield return StartCoroutine(RotationToTagret(25,2));
 
         if(totalAttack == true)
             SetHitAnimations();
@@ -993,7 +1086,7 @@ public class RumAIHuman : MonoBehaviour
         float attackTime = Random.Range(0.75f,1.25f)*attackSpeed; // ожидание между атаками и доворот в ожидании
         for(int i = 0; i < 5;i++)
         {
-            StartCoroutine(RotationToTagret());
+            yield return StartCoroutine(RotationToTagret(25,2));
             yield return new WaitForSeconds(attackTime/5);
         }
 
@@ -1019,7 +1112,11 @@ public class RumAIHuman : MonoBehaviour
             return;
         }
 
-        LookOnPlayer(hadLookTarget, bodyLookTarget, player, _rigBuilder, 50f);
+        if(bowOn == false)
+            LookOnPlayer(hadLookTarget, bodyLookTarget, player, _rigBuilder, 50f, bodyTargetStartPosition);
+        else
+            LookOnPlayerWithBow(50f);
+
         attackDistanceFinal = 2.2f;
         attackStayDistanceFinal = 2.4f;
         target = player.gameObject;
@@ -1035,15 +1132,8 @@ public class RumAIHuman : MonoBehaviour
         if(target.GetComponent<TaegetAttack>())
             targetPosition = target.transform.position;
 
-        LookOnOtherTarget(hadLookTarget, bodyLookTarget, target, _rigBuilder);
-    }
-
-    public static void LookOnOtherTarget(GameObject hadLookTarget, GameObject bodyLookTarget, GameObject target, RigBuilder _rigBuilder)
-    {
-        hadLookTarget.transform.position = Vector3.MoveTowards(hadLookTarget.transform.position, target.transform.position+ new Vector3(0,1,0), Time.deltaTime * 50);
-        bodyLookTarget.transform.position = Vector3.MoveTowards(bodyLookTarget.transform.position, target.transform.position, Time.deltaTime * 50);
-
-        _rigBuilder.enabled  = true;
+        if(bowOn == false)
+            LookOnOtherTarget(hadLookTarget, bodyLookTarget, target, _rigBuilder, bodyTargetStartPosition);
     }
 
     public void TargetDieCheck()
@@ -1069,22 +1159,27 @@ public class RumAIHuman : MonoBehaviour
         bool targetWatch = false;
         RaycastHit lookArea;
         Vector3 targetVector = targetVis.transform.position - self;
-        Ray ray = new Ray(self+new Vector3(0,2,0) + Vector3.Normalize(targetVector)/2, targetVis.transform.position - self- new Vector3(0,2,0));
-        Physics.Raycast(ray, out lookArea);
+        int layerMask = 1 << 0;
 
-        if (lookArea.collider != null)
+        for(int i = 0; i < 3;i++)
         {
-            if (lookArea.collider.gameObject == targetVis)
-            {
-                return true;
-            } 
-            else
-                return false;
-        }
+            
+            //ray.direction = targetVis.transform.position - self - new Vector3(0,i,0);
+            Debug.DrawLine(self+new Vector3(0,2,0) + Vector3.Normalize(targetVector)/2, targetVis.transform.position - new Vector3(0,i-0.7f,0), Color.red, 2.5f, false);
+            Physics.Linecast(self+new Vector3(0,2,0) + Vector3.Normalize(targetVector)/2, targetVis.transform.position - new Vector3(0,i-0.7f,0), out lookArea, layerMask);
 
-        else
-            return false;
+            if (lookArea.collider != null)
+            {
+                if (lookArea.collider.gameObject == targetVis)
+                {
+                    return true;
+                } 
+            }
+        }
+        return false;
     }
+
+    
 
     private GameObject TargetSearch()
     {
@@ -1118,18 +1213,17 @@ public class RumAIHuman : MonoBehaviour
         return null;
     }
 
-    IEnumerator RotationToTagret()
+    IEnumerator RotationToTagret(int angle, int returnType)
     {
         if(target!=player && target!= null)
         {
             transform.LookAt(new Vector3(target.transform.position.x, transform.position.y ,target.transform.position.z));
-        }
-        
+        }   
+
         Vector3 targetDirection;
         int step = 0;
         int limit = 480;
-        
-        while(25<Vector3.Angle(new Vector3(target.transform.position.x - transform.position.x, 0, target.transform.position.z - transform.position.z), transform.forward)) // доворот к игроку
+        while(angle<Vector3.Angle(new Vector3(target.transform.position.x - transform.position.x, 0, target.transform.position.z - transform.position.z), transform.forward)) // доворот к игроку
         {
             _animator.ResetTrigger("SwordRotationJumpExit");
             _animator.SetTrigger("SwordRotationJump");
@@ -1146,12 +1240,13 @@ public class RumAIHuman : MonoBehaviour
                     break;
                 }
         }
+
+        _animator.SetInteger("JumpReturn",returnType);
         _animator.ResetTrigger("SwordRotationJump");
         _animator.SetTrigger("SwordRotationJumpExit");
     }
 
-
-
+    
     /*----------------------------------------------------------------------------------------------------------------------------------------------------------------------
     ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
